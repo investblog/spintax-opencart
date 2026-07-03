@@ -1,0 +1,49 @@
+name: Release
+
+# Builds the distributable OCMOD package on a clean Linux runner and attaches it
+# to a GitHub (pre-)release. Trigger by pushing a tag like `v0.1.0`, or run
+# manually (workflow_dispatch) to just build + upload the artifact.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build spintax_seo.ocmod.zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: zip, mbstring, dom
+          coverage: none
+
+      - name: Build OCMOD package
+        run: |
+          mkdir -p dist
+          php scripts/build-ocmod.php extension dist/spintax_seo.ocmod.zip
+          echo "--- contents ---"
+          unzip -l dist/spintax_seo.ocmod.zip | tail -n +2
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spintax_seo.ocmod.zip
+          path: dist/spintax_seo.ocmod.zip
+          if-no-files-found: error
+
+      - name: Publish pre-release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          generate_release_notes: true
+          files: dist/spintax_seo.ocmod.zip

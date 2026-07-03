@@ -1,0 +1,81 @@
+# Architecture
+
+A short map of how Spintax SEO for OpenCart is put together. Full spintax syntax
+is documented at <https://spintax.net/docs/syntax>.
+
+## Layers
+
+```
+upload/system/library/spintax/          # framework-agnostic engine (no OpenCart deps)
+  Core/Engine/    Parser, Conditionals, Plurals, Validator      # the spintax kernel
+  Core/Render/    Orchestrator, RenderContext, Renderer         # stage pipeline
+  Core/Binding/   Planner, Applier, Walk, BindingAdmin, …       # decide + apply
+  Core/Template/  TemplateRepository
+  Shim/           HtmlSanitizer, RenderCache, SettingsProvider, TemplateSourceProvider
+  Slug/           SlugAdapter                                   # SEO-URL keyword mode
+  Db/             DbInterface, MysqliDb, OcDb                   # thin DB seam
+  Engine.php, functions.php, autoload.php                       # facade + entry points
+
+upload/admin/…extension/module/spintax_seo.*                    # thin OpenCart MVC-L
+install.xml                                                      # OCMOD (sidebar menu)
+```
+
+The **kernel** (`Core/Engine`, `Core/Render/RenderContext`) is a faithful port of
+the WordPress *Spintax* plugin — copied with only the framework-boundary edits
+(drop WP guards, `wp_json_encode`→`json_encode`) and covered by byte-identity
+tests against the original source. WordPress-specific seams (template source,
+cache, settings, output sanitisation) are reimplemented as small **shims**.
+
+## Rendering pipeline
+
+`Orchestrator::process_template()` runs the stages in a fixed order: strip
+comments → extract `#set` → build variable context → conditionals (pre) → expand
+`%vars%` → conditionals (post) → plurals → enumerations → permutations → nested
+`#include` → post-process. It returns **pre-sanitize** text; the terminal
+`HtmlSanitizer` (for HTML body targets) or the `SlugAdapter` (for SEO-URL
+keywords) is applied by the public `Engine` facade depending on the target kind.
+
+## Bindings, plan() and apply()
+
+A **binding** maps an entity + target field + template source, plus behavior
+flags (seed-once, regenerate-on-save, preserve-manual-edits, clear-on-empty). The
+decision is a **pure function** `Planner::plan(PlanInput)` returning one named
+outcome code (e.g. `WROTE_SEEDED`, `SKIP_TARGET_NONEMPTY`,
+`SKIP_MANUAL_EDIT_DETECTED`, `SKIP_CLEAR_FORBIDDEN_REQUIRED`, …). The **Test
+panel**, **Bulk dry-run** and **Apply** all call the same `plan()` on the same
+resolved inputs, so a preview can never disagree with a live write.
+
+Manual edits are detected by comparing `sha1(current value)` against a stored
+**signature**; a required/display column (`meta_title`) is never cleared.
+
+## The walk (Bulk Apply)
+
+`Walk::dryRun()` counts write/skip/blocked over the whole scope without writing
+and mints a **snapshot token** (a fingerprint of the binding + template +
+active-language/store scope). `Walk::applyChunk()` requires that token — a change
+to the config or scope between Dry run and Apply is rejected (`STALE_SNAPSHOT`).
+A per-binding **walk lock** (compare-and-set on a timestamp) serialises apply
+sessions; a live lock lets only the owner continue. Any **write error halts the
+walk** (not best-effort) and withholds the completion stamp.
+
+## OpenCart integration
+
+The admin controller is thin: it wires OpenCart's `$this->db` (via `OcDb`) and the
+render `Engine` into the tested library and exposes AJAX endpoints. `install()`
+creates the tables, registers the product save/add/delete **events**, grants
+permissions and seeds a demo binding; `uninstall()` deregisters and (optionally)
+drops data. All catalog writes go through **targeted direct SQL** plus a
+`cache->delete('product')` — never the destructive model rewrite.
+
+## Storage
+
+Five `DB_PREFIX`-prefixed InnoDB tables: `spintax_binding`, `spintax_template`,
+`spintax_source`, `spintax_signature`, `spintax_walk`. Small scalar settings live
+in OpenCart's `oc_setting` under the `spintax_seo` group.
+
+## Testing
+
+Kernel classes have unit tests (plus byte-identity checks against the WordPress
+source). The binding/apply/walk/template/install layers have DB integration tests
+that self-skip when no database is reachable, so `scripts/test.*` is green both on
+the dev stand and in CI (PHP 8.1 / 8.3).

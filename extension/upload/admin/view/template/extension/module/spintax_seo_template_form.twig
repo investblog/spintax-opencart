@@ -1,0 +1,76 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header"><div class="container-fluid">
+    <div class="pull-right">
+      <button id="sx-tsave" class="btn btn-primary"><i class="fa fa-save"></i> {{ button_save }}</button>
+      <a href="{{ cancel }}" class="btn btn-default">{{ button_cancel }}</a>
+    </div>
+    <h1>{{ heading_title }} — {{ text_template_edit }}</h1>
+  </div></div>
+  <div class="container-fluid">
+    <div id="sx-talert"></div>
+    <div class="panel panel-default"><div class="panel-body">
+      <form class="form-horizontal">
+        <input type="hidden" id="t-id" value="{{ template.template_id | default(0) }}">
+        <div class="form-group">
+          <label class="col-sm-2 control-label">{{ entry_name }}</label>
+          <div class="col-sm-8"><input id="t-name" class="form-control" value="{{ template.name | default('') }}"></div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-2 control-label">{{ entry_locale }}</label>
+          <div class="col-sm-8"><select id="t-locale" class="form-control">
+            <option value="">{{ text_locale_auto }}</option>
+            {% for l in languages %}<option value="{{ l.code }}">{{ l.code }}</option>{% endfor %}
+          </select></div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-2 control-label">{{ entry_source }}</label>
+          <div class="col-sm-10">
+            <textarea id="t-source" class="form-control" rows="10" style="font-family:monospace">{{ template.source | default('') }}</textarea>
+            <div style="margin-top:8px">
+              <button id="t-validate" type="button" class="btn btn-default btn-sm">{{ button_validate }}</button>
+              <button id="t-preview" type="button" class="btn btn-default btn-sm">{{ button_preview }}</button>
+              <input id="t-preview-eid" class="form-control input-sm" placeholder="{{ entry_entity_id }}" style="width:110px;display:inline-block">
+              <select id="t-preview-lang" class="form-control input-sm" style="width:100px;display:inline-block">{% for l in languages %}<option value="{{ l.language_id }}">{{ l.code }}</option>{% endfor %}</select>
+            </div>
+            <div id="t-validate-out" style="margin-top:8px"></div>
+            <div id="t-preview-out" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </form>
+    </div></div>
+  </div>
+</div>
+<script type="text/javascript">
+var SX = {{ config_json|raw }};
+var SX_TPL = {{ template_json|raw }};
+(function($){
+  function post(url, data){ return $.ajax({url:url, type:'post', dataType:'json', data:data}); }
+  function esc(s){ return $('<div>').text(s == null ? '' : s).html(); }
+  if(SX_TPL){ $('#t-locale').val(SX_TPL.locale); }
+
+  $('#t-validate').on('click', function(){
+    post(SX.endpoints.templateValidate, {source:$('#t-source').val(), locale:$('#t-locale').val()}).done(function(r){
+      var h='';
+      if(r.errors && r.errors.length){ h += '<div class="alert alert-danger">'; $.each(r.errors, function(i,e){ h+='✗ '+esc(e.message)+'<br>'; }); h+='</div>'; }
+      if(r.warnings && r.warnings.length){ h += '<div class="alert alert-warning">'; $.each(r.warnings, function(i,e){ h+='⚠ '+esc(e.message)+'<br>'; }); h+='</div>'; }
+      if(!h){ h='<div class="alert alert-success">{{ text_valid }}</div>'; }
+      $('#t-validate-out').html(h);
+    });
+  });
+  $('#t-preview').on('click', function(){
+    post(SX.endpoints.templatePreview, {source:$('#t-source').val(), entity_id:$('#t-preview-eid').val(), language_id:$('#t-preview-lang').val()}).done(function(r){
+      $('#t-preview-out').html('<div class="well well-sm">{{ text_preview_note }}<br><code>'+esc(r.rendered)+'</code></div>');
+    });
+  });
+  $('#sx-tsave').on('click', function(){
+    post(SX.endpoints.templateSave, {template_id:$('#t-id').val(), name:$('#t-name').val(), source:$('#t-source').val(), locale:$('#t-locale').val()}).done(function(r){
+      if(r.error){ $('#sx-talert').html('<div class="alert alert-danger">'+esc(r.error)+'</div>'); return; }
+      var note = r.dependents>0 ? '<div class="alert alert-warning">'+r.dependents+' {{ text_dependents_notice }}</div>' : '';
+      $('#sx-talert').html(note);
+      location.href='{{ cancel }}';
+    });
+  });
+})(jQuery);
+</script>
+{{ footer }}

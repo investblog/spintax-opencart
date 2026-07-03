@@ -1,0 +1,25 @@
+# Third-party GPL OpenCart core — downloaded, never committed
+/opencart/
+/opencart-*.zip
+
+# Local env / secrets
+.env
+.env.*
+
+# Dependencies / build
+/node_modules/
+/vendor/
+extension/vendor/
+/dist/
+*.ocmod.zip
+
+# PHPUnit
+.phpunit.result.cache
+extension/.phpunit.result.cache
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

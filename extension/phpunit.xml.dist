@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+    bootstrap="tests/bootstrap.php"
+    colors="true"
+    failOnRisky="true"
+    failOnWarning="true"
+    beStrictAboutOutputDuringTests="true"
+    cacheResultFile=".phpunit.result.cache"
+>
+    <testsuites>
+        <testsuite name="kernel">
+            <directory suffix="Test.php">tests</directory>
+        </testsuite>
+    </testsuites>
+    <coverage>
+        <include>
+            <directory suffix=".php">upload/system/library/spintax</directory>
+        </include>
+    </coverage>
+</phpunit>

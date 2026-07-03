@@ -1,0 +1,42 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header"><div class="container-fluid">
+    <div class="pull-right">
+      <a href="{{ add_template }}" class="btn btn-primary"><i class="fa fa-plus"></i> {{ button_add_template }}</a>
+      <a href="{{ back }}" class="btn btn-default">{{ button_back }}</a>
+    </div>
+    <h1>{{ heading_title }} — {{ text_templates }}</h1>
+  </div></div>
+  <div class="container-fluid">
+    <div class="panel panel-default"><div class="panel-body">
+      <table class="table table-bordered table-hover">
+        <thead><tr><td>{{ column_name }}</td><td>{{ column_locale }}</td><td>{{ column_used_by }}</td><td>{{ column_modified }}</td><td class="text-right">{{ column_action }}</td></tr></thead>
+        <tbody>
+          {% if templates %}{% for t in templates %}
+          <tr>
+            <td>{{ t.name }}</td><td>{{ t.locale ? t.locale : '—' }}</td><td>{{ t.used_by }}</td><td>{{ t.date_modified }}</td>
+            <td class="text-right">
+              <a href="{{ edit_base }}&amp;template_id={{ t.template_id }}" class="btn btn-info btn-xs"><i class="fa fa-pencil"></i></a>
+              <button class="btn btn-danger btn-xs sx-tdel" data-id="{{ t.template_id }}"><i class="fa fa-trash"></i></button>
+            </td>
+          </tr>
+          {% endfor %}{% else %}
+          <tr><td class="text-center" colspan="5">{{ text_no_templates }}</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+<script type="text/javascript">
+var SX = {{ config_json|raw }};
+(function($){
+  $('.sx-tdel').on('click', function(){
+    if(!confirm('{{ text_confirm_delete }}')) return;
+    $.ajax({url:SX.endpoints.templateDelete, type:'post', dataType:'json', data:{template_id:$(this).data('id')}}).done(function(r){
+      if(r.error){ alert(r.error + (r.bindings ? ': ' + r.bindings.join(', ') : '')); } else { location.reload(); }
+    });
+  });
+})(jQuery);
+</script>
+{{ footer }}

@@ -1,0 +1,55 @@
+# OpenCart 3.0.5.0 reference / development environment for the Spintax SEO extension.
+#   web     -> http://localhost:8080/         storefront
+#              http://localhost:8080/admin/    admin  (user: admin / pass: admin)
+#   adminer -> http://localhost:8081/          DB browser (server: db, user/pass: opencart)
+#
+# The OpenCart core lives in ./opencart/upload (bind-mounted, git-ignored, GPL third-party).
+# Our extension code will be developed separately and deployed into the mount.
+
+services:
+  db:
+    image: mariadb:10.6
+    container_name: spintax-oc-db
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: opencart
+      MARIADB_USER: opencart
+      MARIADB_PASSWORD: opencart
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  web:
+    build: ./docker/php
+    container_name: spintax-oc-web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./opencart/upload:/var/www/html
+      # Extension source + PHPUnit harness (not part of the docroot). Lets us run
+      # `docker compose exec web php /opt/spintax/vendor/bin/phpunit` against the
+      # ported engine kernel. See scripts/test.sh.
+      - ./extension:/opt/spintax
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:latest
+    container_name: spintax-oc-adminer
+    ports:
+      - "8081:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  dbdata:

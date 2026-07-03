@@ -1,0 +1,156 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right">
+        <a href="{{ templates_url }}" class="btn btn-default">{{ text_templates }}</a>
+        <a href="{{ add_binding }}" class="btn btn-primary"><i class="fa fa-plus"></i> {{ button_add_binding }}</a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ul class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}<li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="container-fluid">
+
+    <div class="alert alert-info"><i class="fa fa-info-circle"></i> {{ text_first_run }}</div>
+
+    {# ---- Panel 1: Bindings list ---- #}
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-list"></i> {{ text_bindings }}</h3></div>
+      <div class="panel-body">
+        <table class="table table-bordered table-hover">
+          <thead><tr>
+            <td>{{ column_binding }}</td><td>{{ column_entity }}</td><td>{{ column_target }}</td>
+            <td>{{ column_source }}</td><td>{{ column_status }}</td><td class="text-right">{{ column_action }}</td>
+          </tr></thead>
+          <tbody>
+            {% if bindings %}{% for b in bindings %}
+            <tr>
+              <td>{{ b.binding_id }}</td><td>{{ b.entity_type }}</td>
+              <td>{{ b.target_kind }}{% if b.target_column %} &middot; {{ b.target_column }}{% endif %}</td>
+              <td>{{ b.template_name }}</td>
+              <td>{% if b.status == '1' %}<span class="label label-success">{{ text_enabled }}</span>{% else %}<span class="label label-default">{{ text_disabled }}</span>{% endif %}</td>
+              <td class="text-right">
+                <a href="{{ add_binding }}&amp;binding_id={{ b.binding_id }}" class="btn btn-info btn-xs"><i class="fa fa-pencil"></i></a>
+                <button type="button" class="btn btn-danger btn-xs sx-del" data-id="{{ b.binding_id }}"><i class="fa fa-trash"></i></button>
+              </td>
+            </tr>
+            {% endfor %}{% else %}
+            <tr><td class="text-center" colspan="6">{{ text_no_bindings }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ---- Panel 2: Test (dry, never writes) ---- #}
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-flask"></i> {{ text_test }}</h3></div>
+      <div class="panel-body">
+        <div class="form-inline">
+          <select id="sx-test-binding" class="form-control">{% for b in bindings %}<option value="{{ b.binding_id }}">{{ b.binding_id }} &middot; {{ b.target_column }}</option>{% endfor %}</select>
+          <input id="sx-test-entity" class="form-control" placeholder="{{ entry_entity_id }}" style="width:120px">
+          <select id="sx-test-lang" class="form-control">{% for l in languages %}<option value="{{ l.language_id }}">{{ l.code }}</option>{% endfor %}</select>
+          <button id="sx-test-run" type="button" class="btn btn-default">{{ button_test }}</button>
+        </div>
+        <div id="sx-test-out" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    {# ---- Panel 3: Bulk Apply ---- #}
+    <div class="panel panel-danger">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-bolt"></i> {{ text_bulk }} <small>{{ text_bulk_warn }}</small></h3></div>
+      <div class="panel-body">
+        <div class="form-inline">
+          <select id="sx-bulk-binding" class="form-control">{% for b in bindings %}{% if b.status == '1' %}<option value="{{ b.binding_id }}">{{ b.binding_id }} &middot; {{ b.target_column }}</option>{% endif %}{% endfor %}</select>
+          <button id="sx-dry" type="button" class="btn btn-default">{{ button_dry_run }}</button>
+          <button id="sx-apply" type="button" class="btn btn-danger" disabled>{{ button_apply }}</button>
+          <button id="sx-release" type="button" class="btn btn-warning btn-xs">{{ button_release_lock }}</button>
+        </div>
+        <div id="sx-dry-out" style="margin-top:12px"></div>
+        <div id="sx-progress" style="margin-top:12px; display:none">
+          <div class="progress"><div id="sx-bar" class="progress-bar" style="width:0%"></div></div>
+          <div id="sx-progress-txt" class="text-muted"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="text/javascript">
+var SX = {{ config_json|raw }};
+var SX_TXT = { blocked: '{{ text_blocked }}', stale: '{{ text_stale }}', done: '{{ text_done }}', init: '{{ button_init_baseline }}' };
+(function($){
+  function post(url, data){ return $.ajax({url:url, type:'post', dataType:'json', data:data}); }
+  function esc(s){ return $('<div>').text(s == null ? '' : s).html(); }
+
+  // Delete binding
+  $('.sx-del').on('click', function(){
+    if(!confirm('{{ text_confirm_delete }}')) return;
+    var id=$(this).data('id');
+    post(SX.endpoints.delete, {binding_id:id}).done(function(){ location.reload(); });
+  });
+
+  // Test panel
+  $('#sx-test-run').on('click', function(){
+    var bid=$('#sx-test-binding').val(), eid=$('#sx-test-entity').val(), lid=$('#sx-test-lang').val();
+    post(SX.endpoints.test, {binding_id:bid, entity_id:eid, language_id:lid}).done(function(r){
+      if(r.error){ $('#sx-test-out').html('<div class="alert alert-danger">'+esc(r.error)+'</div>'); return; }
+      var initBtn = (r.code === 'SKIP_COLD_START_MANUAL')
+        ? '<button id="sx-init" class="btn btn-warning btn-xs" data-b="'+esc(bid)+'" data-e="'+esc(eid)+'" data-l="'+esc(lid)+'">'+SX_TXT.init+'</button>' : '';
+      $('#sx-test-out').html(
+        '<table class="table table-bordered"><tbody>'+
+        '<tr><td>Source resolved</td><td>'+(r.source_resolved?'yes':'no')+'</td></tr>'+
+        '<tr><td>Rendered preview</td><td><code>'+esc(r.rendered)+'</code></td></tr>'+
+        '<tr><td>Current target</td><td><code>'+esc(r.current)+'</code></td></tr>'+
+        '<tr><td>Planned action</td><td><b>'+(r.code && r.code.indexOf('WROTE')===0?'WRITE':'SKIP')+'</b></td></tr>'+
+        '<tr><td>Reason code</td><td><span class="label label-info">'+esc(r.code)+'</span> '+initBtn+'</td></tr>'+
+        '<tr><td>Would change?</td><td>'+(r.would_change?'YES':'no')+'</td></tr>'+
+        '</tbody></table>');
+    });
+  });
+  $('#sx-test-out').on('click', '#sx-init', function(){
+    var t=$(this);
+    if(!confirm('{{ text_confirm_init }}')) return;
+    post(SX.endpoints.initBaseline, {binding_id:t.data('b'), entity_id:t.data('e'), language_id:t.data('l')})
+      .done(function(){ $('#sx-test-run').click(); });
+  });
+
+  // Bulk Apply
+  var token=null, total=0, lockTs=0;
+  $('#sx-dry').on('click', function(){
+    var bid=$('#sx-bulk-binding').val();
+    $('#sx-apply').prop('disabled', true); $('#sx-progress').hide();
+    post(SX.endpoints.dryRun, {binding_id:bid}).done(function(r){
+      if(r.error){ $('#sx-dry-out').html('<div class="alert alert-danger">'+esc(r.message||r.error)+'</div>'); return; }
+      token=r.dry_run_token; total=r.products;
+      var bd=''; for(var k in r.breakdown){ bd += esc(k)+': '+r.breakdown[k]+' '; }
+      $('#sx-dry-out').html('<div class="alert alert-info">Total '+r.total+' &middot; Write <b>'+r.write+'</b> &middot; Skip '+r.skip+' &middot; '+SX_TXT.blocked+' '+r.blocked+'<br><small>'+bd+'</small><br><small>token '+esc(token.substr(0,8))+'…</small></div>');
+      $('#sx-apply').prop('disabled', false);
+    });
+  });
+  var acc={written:0, skipped:0, failed:0};
+  $('#sx-apply').on('click', function(){
+    $('#sx-apply').prop('disabled', true); $('#sx-progress').show();
+    acc={written:0, skipped:0, failed:0}; lockTs=0;
+    applyLoop($('#sx-bulk-binding').val());
+  });
+  function applyLoop(bid){
+    post(SX.endpoints.apply, {binding_id:bid, dry_run_token:token, chunk:20, lock_ts:lockTs}).done(function(r){
+      if(r.error){ $('#sx-progress-txt').html('<span class="text-danger">'+esc(r.error==='STALE_SNAPSHOT'?SX_TXT.stale:r.error)+' '+esc(r.message||'')+'</span>'); return; }
+      lockTs = r.lock_ts || 0;
+      acc.written+=r.written; acc.skipped+=r.skipped; acc.failed+=r.failed;
+      var pct = total? Math.round(r.processed/total*100):100;
+      $('#sx-bar').css('width', pct+'%').text(pct+'%');
+      $('#sx-progress-txt').text('processed '+r.processed+'/'+total+' · written '+acc.written+' · skipped '+acc.skipped+' · failed '+acc.failed+' · last ID '+r.last_id);
+      if(r.failed>0){ $('#sx-progress-txt').append(' <span class="text-danger">— stopped on write error</span>'); return; }
+      if(!r.done){ applyLoop(bid); } else { $('#sx-progress-txt').append(' — '+SX_TXT.done); }
+    });
+  }
+  $('#sx-release').on('click', function(){ post(SX.endpoints.releaseLock, {binding_id:$('#sx-bulk-binding').val()}).done(function(r){ alert(r.error ? (r.message||r.error) : '{{ text_lock_released }}'); }); });
+})(jQuery);
+</script>
+{{ footer }}

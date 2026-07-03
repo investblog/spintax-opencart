@@ -1,0 +1,127 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header"><div class="container-fluid">
+    <div class="pull-right">
+      <button id="sx-save" class="btn btn-primary"><i class="fa fa-save"></i> {{ button_save }}</button>
+      <a href="{{ cancel }}" class="btn btn-default">{{ button_cancel }}</a>
+    </div>
+    <h1>{{ heading_title }} — {{ text_binding_edit }}</h1>
+  </div></div>
+  <div class="container-fluid">
+    <div id="sx-alert"></div>
+    <div class="panel panel-default"><div class="panel-body">
+      <form class="form-horizontal">
+        <input type="hidden" id="f-binding_id" value="{{ binding.binding_id | default('') }}">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_entity }}</label>
+          <div class="col-sm-6"><select id="f-entity_type" class="form-control">
+            <option value="product">product</option>
+            <option value="category" disabled>category (Phase 2)</option>
+            <option value="information" disabled>information (Phase 2)</option>
+            <option value="manufacturer" disabled>manufacturer (Phase 3)</option>
+          </select></div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_target_kind }}</label>
+          <div class="col-sm-6"><select id="f-target_kind" class="form-control">
+            <option value="description_column">description column</option>
+            <option value="seo_keyword" disabled>seo_keyword (Phase 3)</option>
+            <option value="eav_attribute" disabled>eav_attribute (Phase 4)</option>
+          </select></div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_target_field }}</label>
+          <div class="col-sm-6"><select id="f-target_column" class="form-control"></select>
+            <span class="help-block">{{ help_target }}</span></div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_source }}</label>
+          <div class="col-sm-6"><select id="f-template_id" class="form-control">
+            {% for t in templates %}<option value="{{ t.template_id }}">{{ t.name }}</option>{% endfor %}
+          </select><input type="hidden" id="f-source_mode" value="template"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_mode }}</label>
+          <div class="col-sm-6">
+            <label class="radio-inline"><input type="radio" name="mode" value="seed" checked> {{ text_mode_seed }}</label>
+            <label class="radio-inline"><input type="radio" name="mode" value="regenerate"> {{ text_mode_regen }}</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_flags }}</label>
+          <div class="col-sm-6">
+            <div class="checkbox"><label><input type="checkbox" id="f-preserve" checked> {{ text_preserve }}</label></div>
+            <div class="checkbox"><label><input type="checkbox" id="f-clear"> {{ text_clear }}</label></div>
+            <p class="help-block">{{ help_required_guard }}</p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_trigger }}</label>
+          <div class="col-sm-6"><div class="checkbox"><label><input type="checkbox" id="f-trigger"> {{ text_trigger_save }}</label></div>
+            <p class="help-block">{{ help_trigger }}</p></div>
+        </div>
+        <div class="form-group">
+          <label class="col-sm-3 control-label">{{ entry_active }}</label>
+          <div class="col-sm-6"><div class="checkbox"><label><input type="checkbox" id="f-status"> {{ text_enabled }}</label></div></div>
+        </div>
+      </form>
+    </div></div>
+  </div>
+</div>
+
+<script type="text/javascript">
+var SX = {{ config_json|raw }};
+var SX_BINDING = {{ binding_json|raw }};
+(function($){
+  function post(url, data){ return $.ajax({url:url, type:'post', dataType:'json', data:data}); }
+  function loadTargets(sel){
+    post(SX.endpoints.targets, {entity_type:$('#f-entity_type').val()}).done(function(list){
+      var h=''; $.each(list, function(i,o){ h += '<option value="'+o.value+'">'+o.label+'</option>'; });
+      $('#f-target_column').html(h); if(sel){ $('#f-target_column').val(sel); }
+    });
+  }
+  $('#f-entity_type').on('change', function(){ loadTargets(); });
+
+  // Prefill on edit
+  if(SX_BINDING){
+    $('#f-entity_type').val(SX_BINDING.entity_type);
+    $('#f-template_id').val(SX_BINDING.template_id);
+    $('input[name=mode]').filter('[value='+(SX_BINDING.regenerate_on_save=='1'?'regenerate':'seed')+']').prop('checked',true);
+    $('#f-preserve').prop('checked', SX_BINDING.preserve_manual_edits=='1');
+    $('#f-clear').prop('checked', SX_BINDING.clear_on_empty=='1');
+    $('#f-trigger').prop('checked', SX_BINDING.trigger_on_save=='1');
+    $('#f-status').prop('checked', SX_BINDING.status=='1');
+    loadTargets(SX_BINDING.target_column);
+  } else { loadTargets(); }
+
+  $('#sx-save').on('click', function(){
+    var regen = $('input[name=mode]:checked').val()==='regenerate';
+    var data = {
+      binding_id: $('#f-binding_id').val(),
+      entity_type: $('#f-entity_type').val(),
+      target_kind: $('#f-target_kind').val(),
+      target_column: $('#f-target_column').val(),
+      source_mode: 'template',
+      template_id: $('#f-template_id').val(),
+      trigger_on_save: $('#f-trigger').is(':checked') ? 1 : 0,
+      auto_seed_empty: regen ? 0 : 1,
+      regenerate_on_save: regen ? 1 : 0,
+      preserve_manual_edits: $('#f-preserve').is(':checked') ? 1 : 0,
+      clear_on_empty: $('#f-clear').is(':checked') ? 1 : 0,
+      status: $('#f-status').is(':checked') ? 1 : 0
+    };
+    post(SX.endpoints.save, data).done(function(r){
+      if(r.errors){
+        var m=''; for(var k in r.errors){ m += '<li>'+k+': '+r.errors[k]+'</li>'; }
+        $('#sx-alert').html('<div class="alert alert-danger"><ul>'+m+'</ul></div>');
+      } else { location.href='{{ cancel }}'; }
+    });
+  });
+})(jQuery);
+</script>
+{{ footer }}

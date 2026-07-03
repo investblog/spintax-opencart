@@ -1,0 +1,57 @@
+name: Lint
+
+# Two lightweight lint jobs on clean Linux runners:
+#  - super-linter (GitHub's linter) for workflow YAML, XML (install.xml) and JSON;
+#  - a dedicated `php -l` syntax pass (no composer, so it can't trip on the lock).
+# The PSR style linters (phpcs/phpstan/psalm) are intentionally not run: the engine
+# kernel is a faithful, verbatim port of the WordPress plugin (WP conventions).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  super-linter:
+    name: Super-Linter (workflows, XML, JSON)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Super-Linter
+        uses: super-linter/super-linter/slim@v7
+        env:
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: true
+          # Don't lint the vendored OpenCart core, the WP reference copies, or build output.
+          FILTER_REGEX_EXCLUDE: (opencart/.*|extension/reference/.*|dist/.*)
+          # Opt-in only (super-linter forbids mixing true/false). PHP is handled by the
+          # php-syntax job below — super-linter would otherwise run `composer install`.
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_XML: true
+          VALIDATE_JSON: true
+
+  php-syntax:
+    name: PHP syntax (php -l)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Lint all PHP files
+        run: |
+          find extension/upload extension/tests scripts -name '*.php' -print0 \
+            | xargs -0 -n1 -P4 php -l

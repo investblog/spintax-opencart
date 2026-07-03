@@ -1,0 +1,40 @@
+{
+    "name": "spintax/opencart-seo",
+    "description": "Spintax SEO — OpenCart 3.x extension. Dev/test harness for the ported spintax engine kernel.",
+    "type": "project",
+    "license": "GPL-3.0-or-later",
+    "homepage": "https://301.st",
+    "authors": [
+        { "name": "301st", "homepage": "https://301.st" }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "ext-mbstring": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Spintax\\": "upload/system/library/spintax/"
+        },
+        "files": [
+            "upload/system/library/spintax/functions.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Spintax\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "platform": {
+            "php": "8.1"
+        }
+    }
+}
