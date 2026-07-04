@@ -77,6 +77,36 @@
       </div>
     </div>
 
+    {# ---- Panel 4: Settings ---- #}
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-cog"></i> {{ text_settings }}</h3></div>
+      <div class="panel-body">
+        <div class="checkbox">
+          <label><input type="checkbox" id="sx-credit"{% if storefront_credit %} checked{% endif %}> {{ entry_credit }}</label>
+        </div>
+        <p class="help-block">{{ help_credit }}</p>
+        <button id="sx-save-settings" type="button" class="btn btn-primary">{{ button_save_settings }}</button>
+        <span id="sx-settings-msg" class="text-muted" style="margin-left:8px"></span>
+        <hr>
+        <label class="control-label">{{ text_cron }}</label>
+        <p class="help-block">{{ text_cron_help }}</p>
+        <input type="text" class="form-control" readonly value="{{ cron_path }}" onclick="this.select()">
+        <p class="help-block"><small>{{ text_cron_note }}</small></p>
+      </div>
+    </div>
+
+    {# ---- Panel 5: Activity log ---- #}
+    <div class="panel panel-default">
+      <div class="panel-heading"><h3 class="panel-title"><i class="fa fa-list"></i> {{ text_logs }}
+        <button id="sx-logs-refresh" type="button" class="btn btn-link btn-xs pull-right" style="padding:0">{{ button_refresh }}</button></h3></div>
+      <div class="panel-body" style="padding:0">
+        <table class="table table-condensed table-striped" style="margin:0">
+          <thead><tr><th>{{ column_time }}</th><th>{{ column_binding }}</th><th>{{ column_origin }}</th><th>{{ column_result }}</th></tr></thead>
+          <tbody id="sx-logs-body"><tr><td colspan="4" class="text-muted">…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -94,6 +124,55 @@ var SX_TXT = { blocked: '{{ text_blocked }}', stale: '{{ text_stale }}', done: '
     post(SX.endpoints.delete, {binding_id:id}).done(function(){ location.reload(); });
   });
 
+  // Settings: opt-in storefront credit (default OFF)
+  $('#sx-save-settings').on('click', function(){
+    post(SX.endpoints.saveSettings, {storefront_credit: $('#sx-credit').is(':checked') ? 1 : 0})
+      .done(function(r){ $('#sx-settings-msg').text(r.success ? '{{ text_saved }}' : (r.error || '')); });
+  });
+
+  // Activity log (§15)
+  function loadLogs(){
+    post(SX.endpoints.logs, {}).done(function(r){
+      var rows = (r && r.rows) || [], h = '';
+      if(!rows.length){ $('#sx-logs-body').html('<tr><td colspan="4" class="text-muted">{{ text_no_logs }}</td></tr>'); return; }
+      $.each(rows, function(i,o){
+        var res = [];
+        if(+o.written) res.push('<span class="text-success">'+(+o.written)+' {{ text_log_written }}</span>');
+        if(+o.skipped) res.push('<span class="text-muted">'+(+o.skipped)+' {{ text_log_skipped }}</span>');
+        if(+o.blocked) res.push('<span class="text-danger">'+(+o.blocked)+' {{ text_log_blocked }}</span>');
+        if(o.note) res.push(esc(o.note));
+        h += '<tr><td><small>'+esc(o.date_added)+'</small></td><td><code>'+esc(o.binding_id)+'</code></td><td>'+esc(o.origin)+'</td><td>'+res.join(', ')+'</td></tr>';
+      });
+      $('#sx-logs-body').html(h);
+    });
+  }
+  $('#sx-logs-refresh').on('click', loadLogs);
+  loadLogs();
+
+  // Word-level diff (current → rendered) for the Test panel. LCS over whitespace
+  // tokens; capped so a huge description can't build a giant DP matrix.
+  function diffWords(a, b){
+    var aw=(a==null?'':a).split(/(\s+)/), bw=(b==null?'':b).split(/(\s+)/);
+    var n=aw.length, m=bw.length;
+    if(a===b){ return '<span class="text-muted">{{ text_diff_same }}</span>'; }
+    if(n*m > 40000){ // too large for an inline LCS — show plainly
+      return '<del style="background:#fdd">'+esc(a)+'</del> <ins style="background:#dfd;text-decoration:none">'+esc(b)+'</ins>';
+    }
+    var dp=[]; for(var i=0;i<=n;i++){ dp[i]=new Array(m+1).fill(0); }
+    for(i=n-1;i>=0;i--){ for(var j=m-1;j>=0;j--){ dp[i][j]=(aw[i]===bw[j])?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]); } }
+    var out='', p=0, q=0;
+    function del(s){ return s==='' ? '' : '<del style="background:#fdd">'+esc(s)+'</del>'; }
+    function ins(s){ return s==='' ? '' : '<ins style="background:#dfd;text-decoration:none">'+esc(s)+'</ins>'; }
+    while(p<n && q<m){
+      if(aw[p]===bw[q]){ out+=esc(aw[p]); p++; q++; }
+      else if(dp[p+1][q]>=dp[p][q+1]){ out+=del(aw[p]); p++; }
+      else { out+=ins(bw[q]); q++; }
+    }
+    while(p<n){ out+=del(aw[p]); p++; }
+    while(q<m){ out+=ins(bw[q]); q++; }
+    return out;
+  }
+
   // Test panel
   $('#sx-test-run').on('click', function(){
     var bid=$('#sx-test-binding').val(), eid=$('#sx-test-entity').val(), lid=$('#sx-test-lang').val();
@@ -109,6 +188,7 @@ var SX_TXT = { blocked: '{{ text_blocked }}', stale: '{{ text_stale }}', done: '
         '<tr><td>Planned action</td><td><b>'+(r.code && r.code.indexOf('WROTE')===0?'WRITE':'SKIP')+'</b></td></tr>'+
         '<tr><td>Reason code</td><td><span class="label label-info">'+esc(r.code)+'</span> '+initBtn+'</td></tr>'+
         '<tr><td>Would change?</td><td>'+(r.would_change?'YES':'no')+'</td></tr>'+
+        '<tr><td>{{ text_diff }}</td><td class="sx-diff">'+diffWords(r.current, r.rendered)+'</td></tr>'+
         '</tbody></table>');
     });
   });
@@ -126,7 +206,7 @@ var SX_TXT = { blocked: '{{ text_blocked }}', stale: '{{ text_stale }}', done: '
     $('#sx-apply').prop('disabled', true); $('#sx-progress').hide();
     post(SX.endpoints.dryRun, {binding_id:bid}).done(function(r){
       if(r.error){ $('#sx-dry-out').html('<div class="alert alert-danger">'+esc(r.message||r.error)+'</div>'); return; }
-      token=r.dry_run_token; total=r.products;
+      token=r.dry_run_token; total=r.entities;
       var bd=''; for(var k in r.breakdown){ bd += esc(k)+': '+r.breakdown[k]+' '; }
       $('#sx-dry-out').html('<div class="alert alert-info">Total '+r.total+' &middot; Write <b>'+r.write+'</b> &middot; Skip '+r.skip+' &middot; '+SX_TXT.blocked+' '+r.blocked+'<br><small>'+bd+'</small><br><small>token '+esc(token.substr(0,8))+'…</small></div>');
       $('#sx-apply').prop('disabled', false);

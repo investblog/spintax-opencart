@@ -66,6 +66,24 @@ final class TemplateRepoDbTest extends TestCase
         )->row['cache_version'];
     }
 
+    public function test_duplicate_nonempty_name_rejected(): void
+    {
+        $first = $this->repo->save(0, 'Shared Name', 'A');
+        $this->assertArrayHasKey('template_id', $first);
+
+        // A second template with the same non-empty name is rejected (#include unambiguity).
+        $dup = $this->repo->save(0, 'Shared Name', 'B');
+        $this->assertArrayHasKey('error', $dup);
+        $this->assertArrayNotHasKey('template_id', $dup);
+
+        // Empty names are allowed for as many templates as you like.
+        $this->assertArrayHasKey('template_id', $this->repo->save(0, '', 'X'));
+        $this->assertArrayHasKey('template_id', $this->repo->save(0, '', 'Y'));
+
+        // Re-saving the first template under its own name is fine (self excluded).
+        $this->assertArrayHasKey('template_id', $this->repo->save((int) $first['template_id'], 'Shared Name', 'A2'));
+    }
+
     public function test_insert_get_list(): void
     {
         $saved = $this->repo->save(0, 'Tpl A', 'Buy {this|that}', '');

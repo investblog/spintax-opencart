@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace Spintax\Install;
 
+use Spintax\Core\Binding\EntityRegistry;
 use Spintax\Db\DbInterface;
 
 final class Installer
@@ -23,11 +24,17 @@ final class Installer
     /** Admin permission route for the extension. */
     public const ROUTE = 'extension/module/spintax_seo';
 
-    /** [event code, model trigger, action route] — product save/add/delete (§6.1). */
-    public const EVENTS = array(
-        array('spintax_seo_product_add', 'admin/model/catalog/product/addProduct/after', 'extension/module/spintax_seo/eventProduct'),
-        array('spintax_seo_product_edit', 'admin/model/catalog/product/editProduct/after', 'extension/module/spintax_seo/eventProduct'),
-        array('spintax_seo_product_delete', 'admin/model/catalog/product/deleteProduct/after', 'extension/module/spintax_seo/eventProductDelete'),
+    /**
+     * Module-level (non-entity) events. The storefront credit hook is the one
+     * catalog-leg event — catalog/-prefixed so it loads only on the storefront
+     * (§12.4). It no-ops unless the merchant enabled the credit.
+     *
+     * @var array<int, array{0:string,1:string,2:string}>
+     */
+    private const MODULE_EVENTS = array(
+        array('spintax_seo_storefront_credit', 'catalog/view/common/footer/after', 'extension/module/spintax_seo/creditFooter'),
+        // Preload the per-entity source tab (OCMOD-injected) on the product form.
+        array('spintax_seo_product_form', 'admin/view/catalog/product_form/before', 'extension/module/spintax_seo/eventProductForm'),
     );
 
     private const DEMO_BINDING_ID = 'bind_demo01';
@@ -50,16 +57,47 @@ final class Installer
 
         $this->registerEvents();
         $this->grantPermissions($userGroupId);
+        $this->seedCronSettings();
 
         if ($seedDemo) {
             $this->seedDemo();
         }
     }
 
+    /**
+     * Seed the self-scheduled cron settings (§6): a random secret token gating the
+     * storefront cron route, and a default interval. Idempotent.
+     */
+    private function seedCronSettings(): void
+    {
+        $exists = $this->db->query(
+            "SELECT setting_id FROM `{$this->prefix}setting` "
+            . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_cron_token' AND store_id = 0"
+        );
+        if ($exists->num_rows > 0) {
+            return;
+        }
+        $token = bin2hex(random_bytes(16));
+        $this->db->query(
+            "INSERT INTO `{$this->prefix}setting` SET store_id = 0, `code` = 'spintax_seo', "
+            . "`key` = 'spintax_seo_cron_token', `value` = '" . $this->db->escape($token) . "', serialized = '0'"
+        );
+        $this->db->query(
+            "INSERT INTO `{$this->prefix}setting` SET store_id = 0, `code` = 'spintax_seo', "
+            . "`key` = 'spintax_seo_cron_interval', `value` = '3600', serialized = '0'"
+        );
+        // Seed last_run so CronRunner::setLastRun can UPDATE a single row (no
+        // delete-then-insert races / duplicate rows).
+        $this->db->query(
+            "INSERT INTO `{$this->prefix}setting` SET store_id = 0, `code` = 'spintax_seo', "
+            . "`key` = 'spintax_seo_last_run', `value` = '0', serialized = '0'"
+        );
+    }
+
     public function uninstall(bool $deleteData = false): void
     {
         // Events + permissions come out regardless (spec §11.3).
-        foreach (self::EVENTS as [$code]) {
+        foreach (self::allEvents() as [$code]) {
             $this->db->query("DELETE FROM `{$this->prefix}event` WHERE `code` = '" . $this->db->escape($code) . "'");
         }
         $this->revokePermissions();
@@ -73,9 +111,30 @@ final class Installer
 
     // --- events --------------------------------------------------------------
 
+    /**
+     * Every event row the extension registers (§6.1): each entity's save/add/
+     * delete triggers plus the module-level storefront-credit hook, flattened.
+     * Public + static so tests can assert the exact set without duplicating it.
+     *
+     * @return array<int, array{0:string,1:string,2:string}>
+     */
+    public static function allEvents(): array
+    {
+        $events = array();
+        foreach (EntityRegistry::all() as $entity) {
+            foreach ($entity->events as $event) {
+                $events[] = $event;
+            }
+        }
+        foreach (self::MODULE_EVENTS as $event) {
+            $events[] = $event;
+        }
+        return $events;
+    }
+
     private function registerEvents(): void
     {
-        foreach (self::EVENTS as [$code, $trigger, $action]) {
+        foreach (self::allEvents() as [$code, $trigger, $action]) {
             // Idempotent: clear any prior registration first.
             $this->db->query("DELETE FROM `{$this->prefix}event` WHERE `code` = '" . $this->db->escape($code) . "'");
             $this->db->query(
@@ -169,7 +228,7 @@ final class Installer
             . "`entity_type` = 'product', `target_kind` = 'description_column', "
             . "`target_column` = 'meta_description', `source_mode` = 'template', "
             . "`template_id` = " . $templateId . ", "
-            . "`status` = '1', `trigger_on_save` = '0', "
+            . "`status` = '1', `trigger_on_save` = '0', `cadence` = 'off', "
             . "`auto_seed_empty` = '1', `preserve_manual_edits` = '1', "
             . "`date_added` = NOW(), `date_modified` = NOW()"
         );

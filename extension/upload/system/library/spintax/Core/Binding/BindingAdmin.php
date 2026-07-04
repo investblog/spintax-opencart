@@ -36,12 +36,13 @@ final class BindingAdmin
      */
     public function legalTargets(string $entityType): array
     {
-        if ('product' !== $entityType) {
-            return array(); // category/information (P2), manufacturer (P3)
+        $entity = EntityRegistry::get($entityType);
+        if (null === $entity) {
+            return array(); // unregistered entity (e.g. manufacturer until Phase 3)
         }
         $out = array();
-        foreach (ProductBinding::COLUMNS as $col) {
-            $out[] = array('value' => $col, 'label' => $col . (in_array($col, ProductBinding::REQUIRED_COLUMNS, true) ? ' (required — never cleared)' : ''));
+        foreach ($entity->columns as $col) {
+            $out[] = array('value' => $col, 'label' => $col . ($entity->isRequiredColumn($col) ? ' (required — never cleared)' : ''));
         }
         return $out;
     }
@@ -73,19 +74,37 @@ final class BindingAdmin
     {
         $errors = array();
 
-        if (($data['entity_type'] ?? '') !== 'product') {
-            $errors['entity_type'] = 'Only Product is supported in this version.';
+        $entity = EntityRegistry::get((string) ($data['entity_type'] ?? ''));
+        if (null === $entity) {
+            $errors['entity_type'] = 'Unsupported entity type.';
         }
-        if (($data['target_kind'] ?? '') !== 'description_column') {
-            $errors['target_kind'] = 'Only description-column targets are supported in this version.';
-        }
-        if (!in_array($data['target_column'] ?? '', ProductBinding::COLUMNS, true)) {
+        $kind = (string) ($data['target_kind'] ?? '');
+        if (!in_array($kind, array('description_column', 'seo_keyword', 'eav_attribute'), true)) {
+            $errors['target_kind'] = 'Unsupported target kind.';
+        } elseif ('description_column' === $kind && null !== $entity && !$entity->isValidColumn((string) ($data['target_column'] ?? ''))) {
+            // seo_keyword has no column (the target is the entity's oc_seo_url keyword).
             $errors['target_column'] = 'Not a legal target field for this entity.';
+        } elseif ('eav_attribute' === $kind) {
+            // Product custom attributes only, and the attribute must resolve.
+            if ('product' !== ($data['entity_type'] ?? '')) {
+                $errors['target_kind'] = 'Attribute targets are only available for products.';
+            } elseif (!$this->attributeExists((int) ($data['attribute_id'] ?? 0))) {
+                $errors['attribute_id'] = 'Choose an existing attribute.';
+            }
         }
-        if (($data['source_mode'] ?? '') !== 'template') {
-            $errors['source_mode'] = 'Only template source mode is supported in this version.';
+        if (!in_array($data['source_mode'] ?? '', array('template', 'per_entity'), true)) {
+            $errors['source_mode'] = 'Unsupported source mode.';
         } elseif (!$this->templateExists((int) ($data['template_id'] ?? 0))) {
+            // Both modes need a template: the source (template mode) or the
+            // per-cell fallback used when an entity has no stored source (per_entity).
             $errors['template_id'] = 'Choose an existing template.';
+        }
+        // per_entity authoring/preload UI (the OCMOD tab) exists only on the product
+        // form for now, so restrict the mode to product — a category/information
+        // per_entity binding could never be given overrides. Lift when their forms
+        // get the tab + preload event.
+        if (('per_entity' === ($data['source_mode'] ?? '')) && ('product' !== ($data['entity_type'] ?? ''))) {
+            $errors['source_mode'] = 'Per-entity source is only available for products in this version.';
         }
 
         return $errors;
@@ -113,7 +132,8 @@ final class BindingAdmin
 
         $set = "entity_type = '" . $this->db->escape((string) $data['entity_type']) . "', "
             . "target_kind = '" . $this->db->escape((string) $data['target_kind']) . "', "
-            . "target_column = '" . $this->db->escape((string) $data['target_column']) . "', "
+            . "target_column = '" . $this->db->escape((string) ($data['target_column'] ?? '')) . "', "
+            . "attribute_id = " . (int) ($data['attribute_id'] ?? 0) . ", "
             . "source_mode = '" . $this->db->escape((string) $data['source_mode']) . "', "
             . "template_id = " . (int) ($data['template_id'] ?? 0) . ", "
             . "trigger_on_save = " . (int) !empty($data['trigger_on_save']) . ", "
@@ -121,6 +141,9 @@ final class BindingAdmin
             . "regenerate_on_save = " . (int) !empty($data['regenerate_on_save']) . ", "
             . "preserve_manual_edits = " . (int) !empty($data['preserve_manual_edits']) . ", "
             . "clear_on_empty = " . (int) !empty($data['clear_on_empty']) . ", "
+            . "seo_disambiguate = " . (int) !empty($data['seo_disambiguate']) . ", "
+            . "store_scope = '" . $this->db->escape($this->normalizeStoreScope((string) ($data['store_scope'] ?? 'ALL'))) . "', "
+            . "cadence = '" . (in_array($data['cadence'] ?? 'off', array('off', 'auto'), true) ? (string) ($data['cadence'] ?? 'off') : 'off') . "', "
             . "status = " . (int) !empty($data['status']) . ", "
             . "date_modified = NOW()";
 
@@ -151,6 +174,43 @@ final class BindingAdmin
         // Purge this binding's walk + signatures (its own bookkeeping only).
         $this->db->query("DELETE FROM `{$this->prefix}spintax_walk` WHERE binding_id = '{$id}'");
         $this->db->query("DELETE FROM `{$this->prefix}spintax_signature` WHERE binding_id = '{$id}'");
+    }
+
+    private function attributeExists(int $attributeId): bool
+    {
+        if ($attributeId <= 0) {
+            return false;
+        }
+        return $this->db->query(
+            "SELECT attribute_id FROM `{$this->prefix}attribute` WHERE attribute_id = " . (int) $attributeId
+        )->num_rows > 0;
+    }
+
+    /** @return array<int, array{value:int, label:string}> product attributes for the eav dropdown. */
+    public function attributes(): array
+    {
+        $rows = $this->db->query(
+            "SELECT a.attribute_id, ad.name FROM `{$this->prefix}attribute` a "
+            . "LEFT JOIN `{$this->prefix}attribute_description` ad ON a.attribute_id = ad.attribute_id AND ad.language_id = "
+            . "(SELECT MIN(language_id) FROM `{$this->prefix}attribute_description`) "
+            . "ORDER BY ad.name"
+        )->rows;
+        $out = array();
+        foreach ($rows as $r) {
+            $out[] = array('value' => (int) $r['attribute_id'], 'label' => (string) ($r['name'] ?? ('#' . $r['attribute_id'])));
+        }
+        return $out;
+    }
+
+    /** Normalize store_scope to 'ALL' (default) or a clean CSV of store ids. */
+    private function normalizeStoreScope(string $raw): string
+    {
+        $raw = trim($raw);
+        if ('' === $raw || 'ALL' === strtoupper($raw)) {
+            return 'ALL';
+        }
+        $ids = array_filter(array_map('trim', explode(',', $raw)), static fn($v): bool => ctype_digit($v));
+        return empty($ids) ? 'ALL' : implode(',', array_map('strval', array_map('intval', $ids)));
     }
 
     private function templateExists(int $templateId): bool

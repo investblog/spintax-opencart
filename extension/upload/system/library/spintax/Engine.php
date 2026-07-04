@@ -51,9 +51,22 @@ final class Engine
      *
      * @param array<string, string> $vars
      */
-    public function renderPreSanitize(string $source, array $vars = array(), string $locale = ''): string
+    public function renderPreSanitize(string $source, array $vars = array(), string $locale = '', ?callable $includeResolver = null): string
     {
-        return $this->orchestrator->process_template($source, $vars, null, $locale);
+        return $this->orchestrator->process_template($source, $vars, null, $locale, $includeResolver);
+    }
+
+    /**
+     * Render a `#include`d template through stages 3–9 (+ nested includes) but
+     * WITHOUT the prose post_process tail and WITHOUT sanitizing — the PARENT
+     * render post_processes and sanitizes the combined result (spec §9.3). Public
+     * so {@see \Spintax\Core\Template\IncludeResolver} can recurse through it.
+     *
+     * @param array<string, string> $vars
+     */
+    public function renderForInclude(string $source, array $vars, string $locale, ?callable $includeResolver = null): string
+    {
+        return $this->orchestrator->process_template($source, $vars, null, $locale, $includeResolver, false);
     }
 
     /**
@@ -72,9 +85,9 @@ final class Engine
      *
      * @param array<string, string> $vars
      */
-    public function render(string $source, array $vars = array(), string $locale = ''): string
+    public function render(string $source, array $vars = array(), string $locale = '', ?callable $includeResolver = null): string
     {
-        return $this->sanitizer->filter($this->renderPreSanitize($source, $vars, $locale));
+        return $this->sanitizer->filter($this->renderPreSanitize($source, $vars, $locale, $includeResolver));
     }
 
     /**
@@ -84,9 +97,9 @@ final class Engine
      *
      * @param array<string, string> $vars
      */
-    public function renderPlain(string $source, array $vars = array(), string $locale = ''): string
+    public function renderPlain(string $source, array $vars = array(), string $locale = '', ?callable $includeResolver = null): string
     {
-        $text = strip_tags($this->renderPreSanitize($source, $vars, $locale));
+        $text = strip_tags($this->renderPreSanitize($source, $vars, $locale, $includeResolver));
         // Collapse the whitespace that stripped tags may leave behind.
         $text = preg_replace('/[ \t]+/u', ' ', $text);
         $text = preg_replace('/\s*\n\s*/u', "\n", (string) $text);

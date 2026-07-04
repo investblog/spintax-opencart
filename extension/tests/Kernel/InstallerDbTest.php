@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace Spintax\Tests\Kernel;
 
 use PHPUnit\Framework\TestCase;
+use Spintax\Core\Binding\EntityRegistry;
 use Spintax\Db\MysqliDb;
 use Spintax\Install\Installer;
 use Spintax\Install\Schema;
@@ -53,9 +54,15 @@ final class InstallerDbTest extends TestCase
         $this->db->link()->close();
     }
 
+    /** @return string[] every event code the Installer registers (entity + module). */
+    private function allEventCodes(): array
+    {
+        return array_map(static fn($e) => $e[0], Installer::allEvents());
+    }
+
     private function cleanup(): void
     {
-        foreach (Installer::EVENTS as [$code]) {
+        foreach ($this->allEventCodes() as $code) {
             $this->db->query("DELETE FROM `" . self::PREFIX . "event` WHERE code = '{$code}'");
         }
         foreach (Schema::dropStatements(self::PREFIX) as $sql) {
@@ -65,7 +72,7 @@ final class InstallerDbTest extends TestCase
 
     private function eventCount(): int
     {
-        $codes = implode("','", array_map(static fn($e) => $e[0], Installer::EVENTS));
+        $codes = implode("','", $this->allEventCodes());
         return (int) $this->db->query(
             "SELECT COUNT(*) AS c FROM `" . self::PREFIX . "event` WHERE code IN ('{$codes}')"
         )->row['c'];
@@ -88,13 +95,24 @@ final class InstallerDbTest extends TestCase
             $this->assertSame(1, $this->db->query("SHOW TABLES LIKE '{$table}'")->num_rows, "{$table} must exist");
         }
 
-        // Events.
-        $this->assertSame(3, $this->eventCount(), 'all three product events registered');
+        // Events: 3 per registered entity (product + category + information).
+        $this->assertSame(count($this->allEventCodes()), $this->eventCount(), 'all entity events registered');
         $trig = $this->db->query(
             "SELECT `trigger`, `action` FROM `" . self::PREFIX . "event` WHERE code = 'spintax_seo_product_edit'"
         )->row;
         $this->assertSame('admin/model/catalog/product/editProduct/after', $trig['trigger']);
-        $this->assertSame('extension/module/spintax_seo/eventProduct', $trig['action']);
+        $this->assertSame('extension/module/spintax_seo/eventSave', $trig['action']);
+        // A Phase-2 entity is wired too.
+        $catTrig = $this->db->query(
+            "SELECT `trigger`, `action` FROM `" . self::PREFIX . "event` WHERE code = 'spintax_seo_category_edit'"
+        )->row;
+        $this->assertSame('admin/model/catalog/category/editCategory/after', $catTrig['trigger']);
+        // The storefront-credit hook is a catalog-/-prefixed module event.
+        $credit = $this->db->query(
+            "SELECT `trigger`, `action` FROM `" . self::PREFIX . "event` WHERE code = 'spintax_seo_storefront_credit'"
+        )->row;
+        $this->assertSame('catalog/view/common/footer/after', $credit['trigger']);
+        $this->assertSame('extension/module/spintax_seo/creditFooter', $credit['action']);
 
         // Permissions.
         $perm = $this->permission();
@@ -118,7 +136,7 @@ final class InstallerDbTest extends TestCase
         $this->installer->install(self::GROUP_ID);
         $this->installer->install(self::GROUP_ID);
 
-        $this->assertSame(3, $this->eventCount(), 're-install must not duplicate events');
+        $this->assertSame(count($this->allEventCodes()), $this->eventCount(), 're-install must not duplicate events');
         $this->assertSame(
             1,
             $this->db->query("SELECT binding_id FROM `" . self::PREFIX . "spintax_binding` WHERE binding_id = 'bind_demo01'")->num_rows,

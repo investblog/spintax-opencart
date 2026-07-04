@@ -18,8 +18,9 @@ namespace Spintax\Tests\Kernel;
 use PHPUnit\Framework\TestCase;
 use Spintax\Catalog\LanguageResolver;
 use Spintax\Core\Binding\Applier;
+use Spintax\Core\Binding\EntityBinding;
+use Spintax\Core\Binding\EntityRegistry;
 use Spintax\Core\Binding\PlanCode;
-use Spintax\Core\Binding\ProductBinding;
 use Spintax\Core\Engine\Parser;
 use Spintax\Db\MysqliDb;
 use Spintax\Engine;
@@ -127,10 +128,10 @@ final class ProductApplyDbTest extends TestCase
         $this->setColumnAllLangs('meta_title', ''); // empty target so seed applies
 
         $engine = $this->engine();
-        $binding = new ProductBinding(self::BINDING, 'meta_title'); // seed-once defaults
+        $binding = new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_title'); // seed-once defaults
         $source = 'Купить %name% — {лучшая|отличная} цена';
 
-        $first = $this->applier($engine)->applyToProduct($this->productId, $binding, $source);
+        $first = $this->applier($engine)->applyTo($this->productId, $binding, $source);
 
         foreach ($first as $langId => $code) {
             $this->assertSame(PlanCode::WROTE_SEEDED, $code, "lang {$langId} should seed");
@@ -147,7 +148,7 @@ final class ProductApplyDbTest extends TestCase
         }
 
         // Re-run in seed mode → target non-empty → no rewrite.
-        $second = $this->applier($engine)->applyToProduct($this->productId, $binding, $source);
+        $second = $this->applier($engine)->applyTo($this->productId, $binding, $source);
         foreach ($second as $langId => $code) {
             $this->assertSame(PlanCode::SKIP_TARGET_NONEMPTY, $code);
         }
@@ -160,15 +161,15 @@ final class ProductApplyDbTest extends TestCase
         $source = 'Купить %name% сегодня';
 
         // Seed first (stamps the baseline signature).
-        $seedBinding = new ProductBinding(self::BINDING, 'meta_title');
-        $this->applier($engine)->applyToProduct($this->productId, $seedBinding, $source);
+        $seedBinding = new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_title');
+        $this->applier($engine)->applyTo($this->productId, $seedBinding, $source);
 
         // A human edits the field.
         $this->setColumnAllLangs('meta_title', 'HUMAN WROTE THIS');
 
         // Regenerate + preserve → must NOT overwrite the human edit.
-        $regen = new ProductBinding(self::BINDING, 'meta_title', autoSeedEmpty: false, regenerateOnSave: true, preserveManualEdits: true);
-        $result = $this->applier($engine)->applyToProduct($this->productId, $regen, $source);
+        $regen = new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_title', autoSeedEmpty: false, regenerateOnSave: true, preserveManualEdits: true);
+        $result = $this->applier($engine)->applyTo($this->productId, $regen, $source);
 
         foreach ($result as $langId => $code) {
             $this->assertSame(PlanCode::SKIP_MANUAL_EDIT_DETECTED, $code);
@@ -191,7 +192,7 @@ final class ProductApplyDbTest extends TestCase
                 return $min;
             }));
             // Source with an enumeration — its RNG fires ONLY if a render happens.
-            $result = $this->applier($engine)->applyToProduct($this->productId, new ProductBinding(self::BINDING, 'meta_title'), '{a|b}');
+            $result = $this->applier($engine)->applyTo($this->productId, new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_title'), '{a|b}');
 
             foreach ($result as $langId => $code) {
                 $this->assertSame(PlanCode::SKIP_OUT_OF_SCOPE_STATUS, $code);
@@ -206,7 +207,7 @@ final class ProductApplyDbTest extends TestCase
     {
         $this->setColumnAllLangs('meta_title', '');
         // '' = present-but-empty source (§8.3) => SKIP_EMPTY_RENDER, not SKIP_SOURCE_NOT_FOUND.
-        $result = $this->applier($this->engine())->applyToProduct($this->productId, new ProductBinding(self::BINDING, 'meta_title'), '');
+        $result = $this->applier($this->engine())->applyTo($this->productId, new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_title'), '');
         foreach ($result as $code) {
             $this->assertSame(PlanCode::SKIP_EMPTY_RENDER, $code);
         }
@@ -215,7 +216,7 @@ final class ProductApplyDbTest extends TestCase
     public function test_null_source_is_source_not_found(): void
     {
         // null = source record could not be resolved => SKIP_SOURCE_NOT_FOUND.
-        $result = $this->applier($this->engine())->applyToProduct($this->productId, new ProductBinding(self::BINDING, 'meta_title'), null);
+        $result = $this->applier($this->engine())->applyTo($this->productId, new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_title'), null);
         foreach ($result as $code) {
             $this->assertSame(PlanCode::SKIP_SOURCE_NOT_FOUND, $code);
         }
@@ -228,8 +229,10 @@ final class ProductApplyDbTest extends TestCase
 
         // Source renders to empty (undefined conditional -> empty else branch).
         $source = '{?missingvar?something|}';
-        $binding = new ProductBinding(
+        $binding = new EntityBinding(
             self::BINDING,
+            EntityRegistry::get('product'),
+            'description_column',
             'meta_title',
             autoSeedEmpty: false,
             regenerateOnSave: true,
@@ -237,7 +240,7 @@ final class ProductApplyDbTest extends TestCase
             clearOnEmpty: true
         );
 
-        $result = $this->applier($engine)->applyToProduct($this->productId, $binding, $source);
+        $result = $this->applier($engine)->applyTo($this->productId, $binding, $source);
 
         foreach ($result as $langId => $code) {
             $this->assertSame(PlanCode::SKIP_CLEAR_FORBIDDEN_REQUIRED, $code);

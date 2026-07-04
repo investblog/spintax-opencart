@@ -14,6 +14,7 @@ namespace Spintax\Tests\Kernel;
 use PHPUnit\Framework\TestCase;
 use Spintax\Catalog\LanguageResolver;
 use Spintax\Core\Binding\Applier;
+use Spintax\Core\Binding\EntityRegistry;
 use Spintax\Core\Binding\SaveEventRunner;
 use Spintax\Core\Binding\Walk;
 use Spintax\Core\Engine\Parser;
@@ -88,7 +89,7 @@ final class ZeroConfigDbTest extends TestCase
 
         // 2) A product save writes NOTHING (trigger_on_save=0).
         $runner = new SaveEventRunner($this->db, self::PREFIX, $engine, $this->langs);
-        $runner->onProductSave((int) $this->db->query("SELECT product_id FROM `" . self::PREFIX . "product` ORDER BY product_id LIMIT 1")->row['product_id']);
+        $runner->onEntitySave(EntityRegistry::get('product'), (int) $this->db->query("SELECT product_id FROM `" . self::PREFIX . "product` ORDER BY product_id LIMIT 1")->row['product_id']);
         $this->assertSame(0, $this->nonEmpty(), 'a product save must not write (zero-config safety)');
 
         // 3) Dry run previews but writes NOTHING.

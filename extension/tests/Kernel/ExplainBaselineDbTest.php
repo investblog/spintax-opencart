@@ -12,8 +12,9 @@ namespace Spintax\Tests\Kernel;
 use PHPUnit\Framework\TestCase;
 use Spintax\Catalog\LanguageResolver;
 use Spintax\Core\Binding\Applier;
+use Spintax\Core\Binding\EntityBinding;
+use Spintax\Core\Binding\EntityRegistry;
 use Spintax\Core\Binding\PlanCode;
-use Spintax\Core\Binding\ProductBinding;
 use Spintax\Core\Engine\Parser;
 use Spintax\Db\MysqliDb;
 use Spintax\Engine;
@@ -90,7 +91,7 @@ final class ExplainBaselineDbTest extends TestCase
     public function test_explain_cell_returns_full_contract(): void
     {
         $this->setMeta(''); // empty → seed
-        $binding = new ProductBinding(self::BINDING, 'meta_description');
+        $binding = new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_description');
         $cell = $this->applier->explainCell($this->productId, $binding, 'Buy {this|that}', $this->langId);
 
         $this->assertSame($this->langId, $cell['language_id']);
@@ -105,7 +106,7 @@ final class ExplainBaselineDbTest extends TestCase
     {
         // Pre-existing merchant copy, no signature → cold-start manual under regenerate.
         $this->setMeta('Hand-written merchant meta');
-        $regen = new ProductBinding(self::BINDING, 'meta_description', autoSeedEmpty: false, regenerateOnSave: true, preserveManualEdits: true);
+        $regen = new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_description', autoSeedEmpty: false, regenerateOnSave: true, preserveManualEdits: true);
 
         $before = $this->applier->explainCell($this->productId, $regen, 'Engine text', $this->langId);
         $this->assertSame(PlanCode::SKIP_COLD_START_MANUAL, $before['code']);
@@ -130,7 +131,7 @@ final class ExplainBaselineDbTest extends TestCase
     {
         // Empty target under seed mode → would WROTE_SEEDED, NOT cold-start.
         $this->setMeta('');
-        $seed = new ProductBinding(self::BINDING, 'meta_description');
+        $seed = new EntityBinding(self::BINDING, EntityRegistry::get('product'), 'description_column', 'meta_description');
 
         $res = $this->applier->initBaseline($seed, 'Engine text', $this->productId, $this->langId);
         $this->assertSame('NOT_COLD_START', $res['error'] ?? '');

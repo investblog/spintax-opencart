@@ -23,4 +23,37 @@
 			]]></add>
 		</operation>
 	</file>
+
+	<!-- Per-entity source (spec §15 Phase 2): a "Spintax SEO" tab on the product
+	     edit form with a per-language source textarea. Preloaded by the
+	     admin/view/catalog/product_form/before event; saved by the existing
+	     product save event into oc_spintax_source. Used only by bindings in
+	     source_mode = per_entity (template mode ignores it). -->
+	<file path="admin/view/template/catalog/product_form.twig">
+		<operation>
+			<search><![CDATA[<li><a href="#tab-seo" data-toggle="tab">{{ tab_seo }}</a></li>]]></search>
+			<add position="after"><![CDATA[
+			<li><a href="#tab-spintax" data-toggle="tab">Spintax SEO</a></li>]]></add>
+		</operation>
+		<operation>
+			<search><![CDATA[<div class="tab-pane active" id="tab-general">]]></search>
+			<add position="before"><![CDATA[
+			<div class="tab-pane" id="tab-spintax">
+				<div class="alert alert-info"><i class="fa fa-info-circle"></i> Optional per-product Spintax source. Used only by a binding set to <b>per_entity</b> mode; leave blank to use the binding's template. Saved when you save the product.</div>
+				<ul class="nav nav-tabs">
+					{% for language in languages %}
+					<li{% if loop.first %} class="active"{% endif %}><a href="#spintax-lang-{{ language.language_id }}" data-toggle="tab"><img src="language/{{ language.code }}/{{ language.code }}.png"/> {{ language.name }}</a></li>
+					{% endfor %}
+				</ul>
+				<div class="tab-content">
+					{% for language in languages %}
+					<div class="tab-pane{% if loop.first %} active{% endif %}" id="spintax-lang-{{ language.language_id }}">
+						<textarea name="spintax_seo_source[{{ language.language_id }}]" rows="6" class="form-control" placeholder="{Buy|Order} %name% at a {great|fair} price.">{{ spintax_seo_source[language.language_id] | default('') }}</textarea>
+					</div>
+					{% endfor %}
+				</div>
+			</div>
+			]]></add>
+		</operation>
+	</file>
 </modification>

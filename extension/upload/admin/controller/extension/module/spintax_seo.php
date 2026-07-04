@@ -52,6 +52,9 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         $data['bindings'] = $this->bindingAdmin()->all();
         $data['templates'] = $this->templateRepo()->list();
         $data['languages'] = $this->languageList();
+        $data['storefront_credit'] = (bool) $this->config->get('spintax_seo_storefront_credit');
+        $data['cron_token'] = (string) $this->config->get('spintax_seo_cron_token');
+        $data['cron_path'] = 'index.php?route=extension/module/spintax_seo/cron&amp;token=' . $data['cron_token'];
         $data['endpoints'] = $this->endpoints();
 
         $this->response->setOutput($this->load->view('extension/module/spintax_seo', $data));
@@ -68,6 +71,7 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         $data['binding'] = ('' !== $bindingId) ? $this->bindingAdmin()->find($bindingId) : null;
         $data['binding_json'] = json_encode($data['binding']); // null when adding
         $data['templates'] = $this->templateRepo()->list();
+        $data['attributes'] = $this->bindingAdmin()->attributes();
         $data['cancel'] = $this->link('');
         $data['endpoints'] = $this->endpoints();
 
@@ -119,7 +123,7 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
     private function endpoints(): array
     {
         $out = array();
-        foreach (array('save', 'delete', 'targets', 'test', 'initBaseline', 'dryRun', 'apply', 'walk', 'releaseLock', 'templateSave', 'templateDelete', 'templateValidate', 'templatePreview') as $m) {
+        foreach (array('save', 'delete', 'targets', 'test', 'initBaseline', 'dryRun', 'apply', 'walk', 'logs', 'releaseLock', 'saveSettings', 'templateSave', 'templateDelete', 'templateValidate', 'templatePreview') as $m) {
             $out[$m] = $this->link($m);
         }
         return $out;
@@ -166,50 +170,119 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
     // --- save-event handlers (registered by the Installer) -------------------
 
     /**
-     * Fired on admin/model/catalog/product/{editProduct,addProduct}/after.
-     * edit → product_id is $args[0]; add → the new id is $output (addProduct's return).
+     * Resolve the entity descriptor from a model event route, e.g.
+     * `admin/model/catalog/category/editCategory/after` → the 'category' descriptor.
+     */
+    private function entityFromRoute(string $route): ?\Spintax\Core\Binding\EntityType
+    {
+        $parts = explode('/', $route);
+        // admin(0)/model(1)/catalog(2)/<entity>(3)/<method>(4)/after(5)
+        return \Spintax\Core\Binding\EntityRegistry::get($parts[3] ?? '');
+    }
+
+    /**
+     * Fired on admin/model/catalog/<entity>/{addX,editX}/after for every registered
+     * entity. edit → id is $args[0]; add → the new id is $output (the add* return).
      *
      * @param string     $route
      * @param array      $args
      * @param mixed|null $output
      */
-    public function eventProduct($route, $args, $output = null): void
+    public function eventSave($route, $args, $output = null): void
     {
         $this->bootstrap();
 
-        $productId = (false !== strpos((string) $route, 'edit'))
-            ? (int) ($args[0] ?? 0)
-            : (int) $output;
-
-        if ($productId <= 0) {
+        $entity = $this->entityFromRoute((string) $route);
+        if (null === $entity) {
             return;
+        }
+
+        $isEdit = (false !== strpos((string) $route, 'edit'));
+        $entityId = $isEdit ? (int) ($args[0] ?? 0) : (int) $output;
+
+        if ($entityId <= 0) {
+            return;
+        }
+
+        // Capture the per-entity source posted from the form tab (edit → $args[1],
+        // add → $args[0] carry the model's $data). Done BEFORE seeding so a
+        // trigger-on-save per_entity binding renders the just-saved source. Empty
+        // values are dropped (blank = template fallback — PerEntitySource::save).
+        $data = $isEdit ? ($args[1] ?? array()) : ($args[0] ?? array());
+        if (isset($data['spintax_seo_source']) && is_array($data['spintax_seo_source'])) {
+            // Sanitize through the SAME spintax input cleaner as template save
+            // (null/control-char strip, UTF-8 normalize) so both source paths match.
+            $sources = array();
+            foreach ($data['spintax_seo_source'] as $langId => $raw) {
+                $sources[(int) $langId] = \Spintax\Support\InputSanitizer::sanitize_spintax((string) $raw);
+            }
+            (new \Spintax\Core\Binding\PerEntitySource($this->db(), DB_PREFIX))
+                ->save($entity->type, $entityId, $sources);
         }
 
         $engine = new \Spintax\Engine();
         $langs = new \Spintax\Catalog\LanguageResolver($this->db(), DB_PREFIX);
-        $cacheFlush = function (): void {
-            $this->cache->delete('product');
+        $cacheFlush = function (string $group): void {
+            $this->cache->delete($group);
         };
 
-        (new \Spintax\Core\Binding\SaveEventRunner($this->db(), DB_PREFIX, $engine, $langs, $cacheFlush))
-            ->onProductSave($productId);
+        (new \Spintax\Core\Binding\SaveEventRunner($this->db(), DB_PREFIX, $engine, $langs, $cacheFlush, $this->activityLog()))
+            ->onEntitySave($entity, $entityId);
     }
 
     /**
-     * Fired on admin/model/catalog/product/deleteProduct/after — orphan purge (§6.2).
+     * Fired on admin/model/catalog/<entity>/deleteX/after — orphan purge (§6.2),
+     * scoped by entity_type so shared numeric ids across entities never collide.
      *
      * @param string $route
      * @param array  $args
      */
-    public function eventProductDelete($route, $args): void
+    public function eventDelete($route, $args): void
     {
-        $productId = (int) ($args[0] ?? 0);
-        if ($productId <= 0) {
+        $this->bootstrap();
+
+        $entity = $this->entityFromRoute((string) $route);
+        if (null === $entity) {
             return;
         }
+        $entityId = (int) ($args[0] ?? 0);
+        if ($entityId <= 0) {
+            return;
+        }
+
         $prefix = DB_PREFIX;
-        $this->db->query("DELETE FROM `{$prefix}spintax_signature` WHERE entity_id = " . $productId);
-        $this->db->query("DELETE FROM `{$prefix}spintax_source` WHERE entity_type = 'product' AND entity_id = " . $productId);
+        $type = $this->db->escape($entity->type);
+        // Signature has no entity_type column; scope the purge by joining the
+        // binding (binding_id encodes the entity) so a category id can't purge a
+        // product's signatures, and vice-versa.
+        $this->db->query(
+            "DELETE sig FROM `{$prefix}spintax_signature` sig "
+            . "JOIN `{$prefix}spintax_binding` b ON sig.binding_id = b.binding_id "
+            . "WHERE b.entity_type = '{$type}' AND sig.entity_id = " . $entityId
+        );
+        // Purge the entity's per-entity sources + bump per_entity bindings so any
+        // pending dry-run snapshot is invalidated (§7.1).
+        (new \Spintax\Core\Binding\PerEntitySource($this->db(), DB_PREFIX))->purge($entity->type, $entityId);
+    }
+
+    /**
+     * Fired on admin/view/catalog/product_form/before — preload the OCMOD tab's
+     * per-language source textareas from oc_spintax_source. Modifies $data by
+     * reference so the injected Twig `{{ spintax_seo_source[language_id] }}` shows
+     * the saved values.
+     *
+     * @param string $route
+     * @param array  $data  template data (by reference)
+     */
+    public function eventProductForm(&$route, &$data): void
+    {
+        $this->bootstrap();
+        // The product being edited comes from the request (the form controller
+        // does not expose product_id in the view $data). Absent on add → no sources.
+        $productId = (int) ($this->request->get['product_id'] ?? 0);
+        $data['spintax_seo_source'] = ($productId > 0)
+            ? (new \Spintax\Core\Binding\PerEntitySource($this->db(), DB_PREFIX))->loadAll('product', $productId)
+            : array();
     }
 
     // --- library factories ---------------------------------------------------
@@ -221,8 +294,9 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
 
     private function applier(): \Spintax\Core\Binding\Applier
     {
-        $cacheFlush = function (): void {
-            $this->cache->delete('product');
+        // Group-aware: the Applier flushes the bound entity's cache group after writes.
+        $cacheFlush = function (string $group): void {
+            $this->cache->delete($group);
         };
         return new \Spintax\Core\Binding\Applier($this->db(), DB_PREFIX, new \Spintax\Engine(), $this->langs(), null, $cacheFlush);
     }
@@ -242,14 +316,23 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         return new \Spintax\Core\Template\TemplateRepository($this->db(), DB_PREFIX);
     }
 
-    /** Resolve a binding's spintax source (template mode → template.source; null if unresolved). */
+    private function activityLog(): \Spintax\Core\Log\ActivityLog
+    {
+        return new \Spintax\Core\Log\ActivityLog($this->db(), DB_PREFIX);
+    }
+
+    /**
+     * Resolve a binding's template source. Used directly in template mode, and as
+     * the per-cell FALLBACK in per_entity mode (the Applier overrides it with the
+     * entity's own stored source when present). null = no template → unresolved.
+     */
     private function sourceFor(array $bindingRow): ?string
     {
-        if (('template' === ($bindingRow['source_mode'] ?? '')) && (int) ($bindingRow['template_id'] ?? 0) > 0) {
+        if ((int) ($bindingRow['template_id'] ?? 0) > 0) {
             $q = $this->db->query("SELECT source FROM `" . DB_PREFIX . "spintax_template` WHERE template_id = " . (int) $bindingRow['template_id']);
             return $q->num_rows > 0 ? (string) $q->row['source'] : null;
         }
-        return null; // per_entity (Phase 2) / missing
+        return null;
     }
 
     private function json($data): void
@@ -302,10 +385,10 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
             $this->json(array('error' => 'BINDING_NOT_FOUND'));
             return;
         }
-        $productBinding = \Spintax\Core\Binding\ProductBinding::fromRow($binding);
+        $entityBinding = \Spintax\Core\Binding\EntityBinding::fromRow($binding);
         $cell = $this->applier()->explainCell(
             (int) ($this->request->post['entity_id'] ?? 0),
-            $productBinding,
+            $entityBinding,
             $this->sourceFor($binding),
             (int) ($this->request->post['language_id'] ?? 0)
         );
@@ -325,7 +408,7 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
             return;
         }
         $this->json($this->applier()->initBaseline(
-            \Spintax\Core\Binding\ProductBinding::fromRow($binding),
+            \Spintax\Core\Binding\EntityBinding::fromRow($binding),
             $this->sourceFor($binding),
             (int) ($this->request->post['entity_id'] ?? 0),
             (int) ($this->request->post['language_id'] ?? 0)
@@ -363,13 +446,24 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         }
         $chunk = isset($this->request->post['chunk']) ? (int) $this->request->post['chunk'] : null;
         $lockTs = isset($this->request->post['lock_ts']) ? (int) $this->request->post['lock_ts'] : null;
-        $this->json($this->walkEngine()->applyChunk(
+        $result = $this->walkEngine()->applyChunk(
             $binding,
             $this->sourceFor($binding),
             (string) ($this->request->post['dry_run_token'] ?? ''),
             $chunk,
             $lockTs
-        ));
+        );
+        if (!isset($result['error'])) {
+            $this->activityLog()->record(
+                (string) $binding['binding_id'],
+                'bulk',
+                null,
+                (int) ($result['written'] ?? 0),
+                (int) ($result['skipped'] ?? 0),
+                (int) ($result['blocked'] ?? 0)
+            );
+        }
+        $this->json($result);
     }
 
     public function walk(): void
@@ -377,6 +471,17 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         $this->bootstrap();
         $state = $this->walkEngine()->loadWalk((string) ($this->request->get['binding_id'] ?? ''));
         $this->json($state ?? array());
+    }
+
+    /** Recent activity log (§15) — JSON for the Logs panel. */
+    public function logs(): void
+    {
+        $this->bootstrap();
+        if ($this->denied()) {
+            $this->json(array('error' => $this->permissionError()));
+            return;
+        }
+        $this->json(array('rows' => $this->activityLog()->recent(100)));
     }
 
     public function releaseLock(): void
@@ -387,6 +492,27 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
             return;
         }
         $this->json($this->walkEngine()->releaseLock((string) ($this->request->post['binding_id'] ?? '')));
+    }
+
+    // --- Settings ------------------------------------------------------------
+
+    /**
+     * Persist module settings. Currently the single opt-in storefront-credit
+     * toggle (§12.4, default OFF). Merges into the existing `spintax_seo` group so
+     * other keys are preserved (editSetting replaces the whole group).
+     */
+    public function saveSettings(): void
+    {
+        $this->bootstrap();
+        if ($this->denied()) {
+            $this->json(array('error' => $this->permissionError()));
+            return;
+        }
+        $this->load->model('setting/setting');
+        $settings = $this->model_setting_setting->getSetting('spintax_seo');
+        $settings['spintax_seo_storefront_credit'] = (int) !empty($this->request->post['storefront_credit']);
+        $this->model_setting_setting->editSetting('spintax_seo', $settings);
+        $this->json(array('success' => true, 'storefront_credit' => (bool) $settings['spintax_seo_storefront_credit']));
     }
 
     // --- Templates -----------------------------------------------------------
@@ -429,17 +555,30 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         $this->bootstrap();
         $source = \Spintax\Support\InputSanitizer::sanitize_spintax((string) ($this->request->post['source'] ?? ''));
         $vars = array();
-        // Optional sample entity: pull its name so %name% resolves in the preview.
+        // Optional sample entity: pull its name/title so %name% resolves in the
+        // preview, from the previewed entity's description table (default product).
         $entityId = (int) ($this->request->post['entity_id'] ?? 0);
         $languageId = (int) ($this->request->post['language_id'] ?? 0);
-        if ($entityId > 0 && $languageId > 0) {
-            $q = $this->db->query("SELECT name FROM `" . DB_PREFIX . "product_description` WHERE product_id = {$entityId} AND language_id = {$languageId}");
+        $entity = \Spintax\Core\Binding\EntityRegistry::get((string) ($this->request->post['entity_type'] ?? 'product'));
+        if (null !== $entity && $entity->hasDescriptionTable() && $entityId > 0 && $languageId > 0) {
+            $q = $this->db->query(
+                "SELECT `{$entity->nameColumn}` AS n FROM `" . DB_PREFIX . "{$entity->descriptionTable}` "
+                . "WHERE `{$entity->idColumn}` = {$entityId} AND language_id = {$languageId}"
+            );
             if ($q->num_rows) {
-                $vars['name'] = (string) $q->row['name'];
+                $vars['name'] = (string) $q->row['n'];
             }
         }
         $code = $this->langs()->activeLanguages()[$languageId] ?? '';
-        $this->json(array('rendered' => (new \Spintax\Engine())->renderPlain($source, $vars, $code)));
+        $engine = new \Spintax\Engine();
+        // Resolve #include in the preview too (same output as Test/Apply).
+        $resolver = (false !== strpos($source, '#include'))
+            ? \Spintax\Core\Template\IncludeResolver::build($engine, function (string $name): ?string {
+                $q = $this->db->query("SELECT source FROM `" . DB_PREFIX . "spintax_template` WHERE name = '" . $this->db->escape($name) . "' ORDER BY template_id LIMIT 1");
+                return isset($q->row['source']) ? (string) $q->row['source'] : null;
+            }, $vars, $code)
+            : null;
+        $this->json(array('rendered' => $engine->renderPlain($source, $vars, $code, $resolver)));
     }
 
     private function permissionError(): string

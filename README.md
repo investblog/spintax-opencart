@@ -34,17 +34,31 @@ Fast delivery, easy returns.”* — a different combination each time.
   variables `%var%` / `#set`, conditionals `{?VAR?then|else}`, and locale-aware
   plurals `{plural N: one|few|many}` (RU/UK 3-form, EN-style default).
   Full syntax reference: **<https://spintax.net/docs/syntax>**.
-- **Bindings** — map an entity + target field + template, per behavior: seed
-  empty only, regenerate on save, preserve manual edits, clear-on-empty (with a
-  hard guard so required columns like `meta_title` are never emptied).
-- **Test panel** — preview a single product/language and see the exact decision
-  (write / skip + reason code) before anything is written. Same engine as Apply.
+- **Entities & targets** — **products, categories, information pages, and
+  manufacturers**. Fill description-columns (meta title/description/keyword +
+  the HTML description), **SEO-URL keywords** (`oc_seo_url`, with a per-store
+  collision guard + optional `-<id>` disambiguation), and **product custom
+  attributes** (`oc_product_attribute`, with a resolve-and-verify guard so a
+  deleted attribute is skipped, never orphaned).
+- **Bindings** — map an entity + target + template, per behavior: seed empty
+  only, regenerate on save, preserve manual edits, clear-on-empty (with a hard
+  guard so required columns like `meta_title` are never emptied). Optional
+  **per-product source override**, and `#include` for reusable template snippets.
+- **Multistore** — SEO-URL generation fans out across every store an entity is
+  assigned to, restrictable per binding.
+- **Automatic updates** — run on the entity's save event, and/or on a
+  self-scheduled, token-protected **cron** endpoint (opt-in per binding) that
+  re-applies when a template changes and re-seeds missing SEO URLs.
+- **Test panel** — preview a single entity/language and see the exact decision
+  (write / skip + reason code) plus a **word-level diff** before anything is
+  written. Same engine as Apply.
 - **Bulk Apply** — **Dry run → Apply**: the dry run previews counts and never
   writes; Apply is chunked, shows a walk lock, and **stops on the first write
   error** (never “best effort”). A server-side snapshot token guarantees Apply
   acts on the exact config you previewed.
+- **Activity log** — every apply (save / bulk / cron) is recorded in-admin.
 - **All active languages**, HTML sanitisation for description bodies, and
-  Cyrillic→latin transliteration for future SEO-URL keywords.
+  Cyrillic→latin transliteration for SEO-URL keywords.
 - **Zero-config first run** — a ready demo binding is installed; nothing is
   written until you explicitly Dry run → Apply.
 
@@ -111,11 +125,13 @@ tests that self-skip when no database is reachable. CI runs on PHP 8.1 and 8.3.
 
 ## Status
 
-Phase 1 (MVP) is complete: **Product** entity, description-column targets, all
-active languages, default store, template source mode, save-event + Bulk Apply,
-zero-config first run, OCMOD package. Planned next: Category / Information /
-Manufacturer entities, per-entity sources, SEO-URL keyword targets, and
-multi-store.
+Pre-release, feature-complete for the core plan: all four entities
+(product / category / information / manufacturer), all three target kinds
+(description columns / SEO-URL keywords / product attributes), per-entity sources,
+`#include`, multistore SEO-URL fan-out, save-event + self-scheduled cron + Bulk
+Apply, an activity log, and the opt-in storefront credit. See
+[`CHANGELOG.md`](CHANGELOG.md) for the full list. It is published as a pre-release
+while it soaks against more real stores.
 
 ## Credits
 

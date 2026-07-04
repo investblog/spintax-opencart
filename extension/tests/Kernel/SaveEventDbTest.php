@@ -2,7 +2,7 @@
 /**
  * Phase 1.1/1.3 gate (live DB) — the whole save-event body end to end (minus the
  * OpenCart event dispatch): Installer seeds the demo template+binding, we enable
- * it, empty a real product's meta_description, and SaveEventRunner::onProductSave
+ * it, empty a real product's meta_description, and SaveEventRunner::onEntitySave
  * seeds unique meta across all active languages. Restores everything; SKIPS off
  * the stand.
  */
@@ -13,6 +13,7 @@ namespace Spintax\Tests\Kernel;
 
 use PHPUnit\Framework\TestCase;
 use Spintax\Catalog\LanguageResolver;
+use Spintax\Core\Binding\EntityRegistry;
 use Spintax\Core\Binding\PlanCode;
 use Spintax\Core\Binding\SaveEventRunner;
 use Spintax\Core\Engine\Parser;
@@ -86,7 +87,7 @@ final class SaveEventDbTest extends TestCase
         $engine = new Engine(new Parser(static fn(int $min, int $max): int => $min));
         $runner = new SaveEventRunner($this->db, self::PREFIX, $engine, $this->langs);
 
-        $results = $runner->onProductSave($this->productId);
+        $results = $runner->onEntitySave(EntityRegistry::get('product'), $this->productId);
 
         $this->assertArrayHasKey('bind_demo01', $results);
         foreach ($results['bind_demo01'] as $langId => $code) {
@@ -114,7 +115,7 @@ final class SaveEventDbTest extends TestCase
         $engine = new Engine(new Parser(static fn(int $min, int $max): int => $min));
         $runner = new SaveEventRunner($this->db, self::PREFIX, $engine, $this->langs);
 
-        $this->assertSame(array(), $runner->onProductSave($this->productId), 'trigger_on_save=0 binding must not run on save');
+        $this->assertSame(array(), $runner->onEntitySave(EntityRegistry::get('product'), $this->productId), 'trigger_on_save=0 binding must not run on save');
         $this->assertSame('', (string) $this->db->query(
             "SELECT meta_description AS v FROM `" . self::PREFIX . "product_description` "
             . "WHERE product_id = {$this->productId} AND language_id = 1"

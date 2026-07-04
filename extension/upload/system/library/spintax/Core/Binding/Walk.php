@@ -6,12 +6,12 @@
  *   dryRun()    — count total/write/skip/blocked over the scope WITHOUT writing;
  *                 store a snapshot + `snapshot_token` on the walk row (§7.1).
  *   applyChunk() — validate the token (STALE_SNAPSHOT on drift), take the walk
- *                 lock, process one LIMIT/OFFSET chunk of products, and STOP on
+ *                 lock, process one LIMIT/OFFSET chunk of entities, and STOP on
  *                 the first write error (not best-effort, §7.4).
  *
- * Cursor + progress are counted in PRODUCTS; write/skip/blocked counts are in
- * CELLS (product × language). MVP scope: Product × description_column, all
- * active languages, default store.
+ * Cursor + progress are counted in ENTITIES; write/skip/blocked counts are in
+ * CELLS (entity × language). Scope: the binding's entity × description_column,
+ * all active languages, default store.
  *
  * @package Spintax\Core\Binding
  */
@@ -71,7 +71,7 @@ final class Walk
      * the snapshot token.
      *
      * @param array<string, mixed> $bindingRow
-     * @return array{dry_run_token:string, products:int, total:int, write:int, skip:int, blocked:int, breakdown:array<string,int>}
+     * @return array{dry_run_token:string, entities:int, total:int, write:int, skip:int, blocked:int, breakdown:array<string,int>}
      */
     public function dryRun(array $bindingRow, ?string $source): array
     {
@@ -79,7 +79,7 @@ final class Walk
             return array('error' => 'BINDING_DISABLED', 'message' => 'Enable the binding before running it.');
         }
 
-        $binding = ProductBinding::fromRow($bindingRow);
+        $binding = EntityBinding::fromRow($bindingRow);
         $token = $this->currentToken($bindingRow);
 
         $total = 0;
@@ -89,12 +89,12 @@ final class Walk
         $offset = 0;
         $scan = 200;
         while (true) {
-            $ids = $this->productIds($offset, $scan);
+            $ids = $this->entityIds($binding->entity, $offset, $scan);
             if (empty($ids)) {
                 break;
             }
             foreach ($ids as $pid) {
-                foreach ($this->applier->planProduct($pid, $binding, $source) as $cell) {
+                foreach ($this->applier->planEntity($pid, $binding, $source) as $cell) {
                     ++$total;
                     ++$counts[PlanCode::category($cell['code'])];
                     $breakdown[$cell['code']] = ($breakdown[$cell['code']] ?? 0) + 1;
@@ -103,11 +103,12 @@ final class Walk
             $offset += $scan;
         }
 
-        $this->resetWalk((string) $bindingRow['binding_id'], $this->totalProducts(), (int) ($bindingRow['cache_version'] ?? 1), $token);
+        $entityTotal = $this->totalEntities($binding->entity);
+        $this->resetWalk((string) $bindingRow['binding_id'], $entityTotal, (int) ($bindingRow['cache_version'] ?? 1), $token);
 
         return array(
             'dry_run_token' => $token,
-            'products' => $this->totalProducts(),
+            'entities' => $entityTotal,
             'total' => $total,
             'write' => $counts['write'],
             'skip' => $counts['skip'],
@@ -150,9 +151,9 @@ final class Walk
             return array('error' => 'WALK_LOCKED', 'message' => 'Another Apply is already running for this binding.');
         }
 
-        $binding = ProductBinding::fromRow($bindingRow);
+        $binding = EntityBinding::fromRow($bindingRow);
         $chunk = $chunkSize ?? ((int) ($bindingRow['chunk_size'] ?? 0) ?: 20);
-        $ids = $this->productIds((int) $walk['cursor_offset'], $chunk);
+        $ids = $this->entityIds($binding->entity, (int) $walk['cursor_offset'], $chunk);
 
         $written = 0;
         $skipped = 0;
@@ -161,7 +162,7 @@ final class Walk
 
         foreach ($ids as $pid) {
             try {
-                foreach ($this->applier->applyToProduct($pid, $binding, $source) as $code) {
+                foreach ($this->applier->applyTo($pid, $binding, $source) as $code) {
                     PlanCode::isWrite($code) ? ++$written : ++$skipped;
                 }
                 $lastId = $pid;
@@ -190,7 +191,7 @@ final class Walk
 
         return array(
             'processed' => $processed,
-            'products_total' => $total,
+            'entities_total' => $total,
             'written' => $written,
             'skipped' => $skipped,
             'failed' => $failed,
@@ -227,6 +228,19 @@ final class Walk
         return array('success' => true);
     }
 
+    /**
+     * Release a lock the CURRENT worker owns when pausing an unfinished walk (the
+     * cron stopping at its chunk/time budget), so the next tick can re-acquire and
+     * continue. CAS on the exact lock_ts we hold — never yanks another worker's lock.
+     */
+    public function pauseLock(string $bindingId, int $lockTs): void
+    {
+        $this->db->query(
+            "UPDATE `{$this->prefix}spintax_walk` SET lock_ts = 0, date_modified = NOW() "
+            . "WHERE binding_id = '" . $this->db->escape($bindingId) . "' AND lock_ts = " . (int) $lockTs
+        );
+    }
+
     /** @return array<string, mixed>|null */
     public function loadWalk(string $bindingId): ?array
     {
@@ -239,17 +253,18 @@ final class Walk
     // --- internals -----------------------------------------------------------
 
     /** @return int[] */
-    private function productIds(int $offset, int $limit): array
+    private function entityIds(EntityType $entity, int $offset, int $limit): array
     {
         $q = $this->db->query(
-            "SELECT product_id FROM `{$this->prefix}product` ORDER BY product_id LIMIT " . (int) $limit . " OFFSET " . (int) $offset
+            "SELECT `{$entity->idColumn}` AS id FROM `{$this->prefix}{$entity->baseTable}` "
+            . "ORDER BY `{$entity->idColumn}` LIMIT " . (int) $limit . " OFFSET " . (int) $offset
         );
-        return array_map(static fn($r): int => (int) $r['product_id'], $q->rows);
+        return array_map(static fn($r): int => (int) $r['id'], $q->rows);
     }
 
-    private function totalProducts(): int
+    private function totalEntities(EntityType $entity): int
     {
-        return (int) $this->db->query("SELECT COUNT(*) AS c FROM `{$this->prefix}product`")->row['c'];
+        return (int) $this->db->query("SELECT COUNT(*) AS c FROM `{$this->prefix}{$entity->baseTable}`")->row['c'];
     }
 
     private function resetWalk(string $bindingId, int $total, int $cacheVersion, string $token): void

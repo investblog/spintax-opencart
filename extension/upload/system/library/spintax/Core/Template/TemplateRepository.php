@@ -61,6 +61,18 @@ final class TemplateRepository
         $s = $this->db->escape($source);
         $l = $this->db->escape($locale);
 
+        // Non-empty names must be unique so `#include "name"` is unambiguous
+        // (empty names are allowed — they simply aren't includable).
+        if ('' !== trim($name)) {
+            $dupe = $this->db->query(
+                "SELECT template_id FROM `{$this->prefix}spintax_template` "
+                . "WHERE name = '{$n}' AND template_id <> " . (int) $templateId . " LIMIT 1"
+            );
+            if ($dupe->num_rows > 0) {
+                return array('error' => 'A template with this name already exists — names must be unique for #include.');
+            }
+        }
+
         if ($templateId > 0) {
             $this->db->query(
                 "UPDATE `{$this->prefix}spintax_template` SET name = '{$n}', source = '{$s}', locale = '{$l}', date_modified = NOW() "

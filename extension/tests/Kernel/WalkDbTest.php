@@ -100,7 +100,7 @@ final class WalkDbTest extends TestCase
         $result = $this->walk->dryRun($this->bindingRow(), $this->source);
 
         $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', $result['dry_run_token']);
-        $this->assertSame($this->productCount(), $result['products']);
+        $this->assertSame($this->productCount(), $result['entities']);
         $this->assertSame($expectedCells, $result['total']);
         $this->assertSame($expectedCells, $result['write'], 'all empty targets should be seed-writes');
         $this->assertSame(0, $result['skip']);

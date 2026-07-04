@@ -23,6 +23,7 @@ final class Schema
         'spintax_source',
         'spintax_signature',
         'spintax_walk',
+        'spintax_log',
     );
 
     /**
@@ -120,6 +121,21 @@ final class Schema
   `snapshot_token`       char(40)   NOT NULL DEFAULT '',
   `date_modified`        datetime   NOT NULL,
   PRIMARY KEY (`binding_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8";
+
+        // Activity log (§15 Logs page): one row per apply event across the three
+        // triggers (save / bulk / cron). Bounded by pruning to the newest N.
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_log` (
+  `log_id`      int(11)      NOT NULL AUTO_INCREMENT,
+  `binding_id`  char(11)     NOT NULL DEFAULT '',
+  `origin`      varchar(10)  NOT NULL DEFAULT '',
+  `entity_id`   int(11)      NOT NULL DEFAULT 0,
+  `written`     int(11)      NOT NULL DEFAULT 0,
+  `skipped`     int(11)      NOT NULL DEFAULT 0,
+  `blocked`     int(11)      NOT NULL DEFAULT 0,
+  `note`        varchar(255) NOT NULL DEFAULT '',
+  `date_added`  datetime     NOT NULL,
+  PRIMARY KEY (`log_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8";
 
         return $ddl;

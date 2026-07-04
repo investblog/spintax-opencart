@@ -2,7 +2,7 @@
 /**
  * Allow-list HTML purifier — the OpenCart replacement for WP `wp_kses_post()`
  * (spec §9.4). This is the ONLY output sanitizer in the pipeline, applied as the
- * terminal stage on every `description_column` / `eav_attribute` write.
+ * terminal stage on every HTML `description_column` write (e.g. `description`).
  *
  * Everything not on the allow-list is stripped: disallowed tags are unwrapped
  * (their safe text/children survive), the dangerous script/layout tags are

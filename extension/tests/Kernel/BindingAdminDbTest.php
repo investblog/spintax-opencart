@@ -69,7 +69,11 @@ final class BindingAdminDbTest extends TestCase
     {
         $targets = array_column($this->admin->legalTargets('product'), 'value');
         $this->assertSame(array('meta_title', 'meta_description', 'meta_keyword', 'description'), $targets);
-        $this->assertSame(array(), $this->admin->legalTargets('category'), 'non-product entities are Phase 2/3');
+        // Category + Information are registered Phase-2 entities (same column set).
+        $this->assertSame(array('meta_title', 'meta_description', 'meta_keyword', 'description'), array_column($this->admin->legalTargets('category'), 'value'));
+        $this->assertSame(array('meta_title', 'meta_description', 'meta_keyword', 'description'), array_column($this->admin->legalTargets('information'), 'value'));
+        // Manufacturer is registered but has NO description columns (seo_keyword only).
+        $this->assertSame(array(), $this->admin->legalTargets('manufacturer'), 'manufacturer has no description columns');
     }
 
     public function test_save_legal_binding_generates_id(): void
@@ -92,12 +96,28 @@ final class BindingAdminDbTest extends TestCase
         $this->assertCount(0, $this->admin->all(), 'illegal binding must not persist');
     }
 
-    public function test_non_product_entity_rejected(): void
+    public function test_unregistered_entity_rejected(): void
     {
         $data = $this->legalData();
-        $data['entity_type'] = 'category';
+        $data['entity_type'] = 'bogus_entity'; // not in the registry
         $res = $this->admin->save($data);
         $this->assertArrayHasKey('entity_type', $res['errors'] ?? array());
+    }
+
+    public function test_per_entity_restricted_to_product(): void
+    {
+        $data = $this->legalData();
+        $data['source_mode'] = 'per_entity';
+
+        // product: per_entity is allowed (its form has the authoring tab).
+        $data['entity_type'] = 'product';
+        $this->assertArrayNotHasKey('source_mode', $this->admin->validate($data), 'per_entity allowed for product');
+
+        // category/information: rejected until their forms get the tab + preload.
+        foreach (array('category', 'information') as $type) {
+            $data['entity_type'] = $type;
+            $this->assertArrayHasKey('source_mode', $this->admin->validate($data), "per_entity rejected for {$type}");
+        }
     }
 
     public function test_missing_template_rejected(): void
