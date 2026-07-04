@@ -75,9 +75,9 @@ final class Engine
      *
      * @param array<string, string> $vars
      */
-    private function renderForSlug(string $source, array $vars, string $locale): string
+    private function renderForSlug(string $source, array $vars, string $locale, ?callable $includeResolver = null): string
     {
-        return $this->orchestrator->process_template($source, $vars, null, $locale, null, false);
+        return $this->orchestrator->process_template($source, $vars, null, $locale, $includeResolver, false);
     }
 
     /**
@@ -112,11 +112,12 @@ final class Engine
      *
      * @param array<string, string> $vars
      */
-    public function renderSlug(string $source, array $vars = array(), string $locale = '', int $max_length = 255): string
+    public function renderSlug(string $source, array $vars = array(), string $locale = '', int $max_length = 255, ?callable $includeResolver = null): string
     {
         // Bypass post_process (§9.5) — the slug adapter does its own lowercase /
         // transliterate / hyphenate; the prose capitalisation+respacing tail must
-        // not run for URL keywords.
-        return $this->slug->to_slug($this->renderForSlug($source, $vars, $locale), $max_length);
+        // not run for URL keywords. #include is resolved first so a slug template
+        // can pull a shared partial (same as the description/eav paths).
+        return $this->slug->to_slug($this->renderForSlug($source, $vars, $locale, $includeResolver), $max_length);
     }
 }

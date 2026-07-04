@@ -4,7 +4,20 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
-## [Unreleased]
+## [0.2.1] — 2026-07-04
+
+### Fixed
+- **`#include` dependencies now invalidate bindings.** Editing or renaming a template
+  that another template `#include`s now bumps the cache_version of the dependent
+  bindings (so the Stale badge lights, a stale dry-run can't apply, and cron
+  re-applies), and deleting a still-included template is refused. Include names are
+  resolved to templates the same way rendering does, so the two never disagree.
+- **`#include` works in SEO-URL keyword templates**, not only description/attribute
+  templates — a slug template can now pull in a shared partial.
+- **Bulk Apply and the activity log count “blocked” cells** (SEO-URL collision,
+  missing source, forbidden clear) instead of folding them into “skipped”.
+
+## [0.2.0] — 2026-07-04
 
 ### Added
 - **`eav_attribute` target** — fill product custom attributes (`oc_product_attribute`)
@@ -49,5 +62,6 @@ Initial public pre-release. Ported the Spintax content engine to OpenCart 3.x:
 - Byte-identical engine kernel (parser / conditionals / plurals) with a shared
   fixture corpus against the WordPress origin.
 
-[Unreleased]: https://github.com/investblog/spintax-opencart/compare/v0.1.0...HEAD
+[0.2.1]: https://github.com/investblog/spintax-opencart/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/investblog/spintax-opencart/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/investblog/spintax-opencart/releases/tag/v0.1.0

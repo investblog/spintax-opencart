@@ -170,7 +170,7 @@ final class Applier
         $collides = false;
         $attributeOk = true;
 
-        // #include resolver (used by the description + eav paths; slug mode has none).
+        // #include resolver (shared by the description, eav AND slug paths).
         $resolver = (false !== strpos($renderSource, '#include'))
             ? IncludeResolver::build($this->engine, fn (string $name): ?string => $this->templateSourceByName($name), $vars, $code)
             : null;
@@ -180,7 +180,7 @@ final class Applier
             // against the whole oc_seo_url table PER STORE (cross-language) + optional
             // -<id> disambiguation; collides=true → the Planner skips.
             $current = $this->readSeoKeyword($storeId, $langId, $query);
-            $slug = $this->engine->renderSlug($renderSource, $vars, $code);
+            $slug = $this->engine->renderSlug($renderSource, $vars, $code, 255, $resolver);
             $seo = $this->resolveSeoKeyword($storeId, $query, $slug, $binding->seoDisambiguate, $entityId);
             $rendered = $seo['keyword'];
             $collides = $seo['collides'];

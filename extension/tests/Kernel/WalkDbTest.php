@@ -209,4 +209,20 @@ final class WalkDbTest extends TestCase
         $this->assertSame('BINDING_DISABLED', $this->walk->applyChunk($row, $this->source, 'x', 5)['error'] ?? '');
         $this->assertSame(0, $this->nonEmptyMetaCount(), 'disabled binding writes nothing');
     }
+
+    public function test_apply_chunk_surfaces_blocked_count(): void
+    {
+        // A missing source → SKIP_SOURCE_NOT_FOUND (a "blocked" code). applyChunk must
+        // report it separately — it folded into `skipped` before, so the activity log
+        // under-counted SEO-collision / missing-source cases after Apply.
+        $row = $this->bindingRow();
+        $dry = $this->walk->dryRun($row, null);
+        $this->assertGreaterThan(0, $dry['blocked'], 'dry run counts blocked');
+
+        $r = $this->walk->applyChunk($row, null, $dry['dry_run_token'], 1000);
+        $this->assertArrayHasKey('blocked', $r, 'applyChunk returns a blocked count');
+        $this->assertSame($dry['blocked'], $r['blocked'], 'apply reports the same blocked total as the dry run');
+        $this->assertSame(0, $r['written']);
+        $this->assertSame(0, $this->nonEmptyMetaCount(), 'nothing written when the source is missing');
+    }
 }

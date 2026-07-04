@@ -212,20 +212,20 @@ var SX_TXT = { blocked: '{{ text_blocked }}', stale: '{{ text_stale }}', done: '
       $('#sx-apply').prop('disabled', false);
     });
   });
-  var acc={written:0, skipped:0, failed:0};
+  var acc={written:0, skipped:0, blocked:0, failed:0};
   $('#sx-apply').on('click', function(){
     $('#sx-apply').prop('disabled', true); $('#sx-progress').show();
-    acc={written:0, skipped:0, failed:0}; lockTs=0;
+    acc={written:0, skipped:0, blocked:0, failed:0}; lockTs=0;
     applyLoop($('#sx-bulk-binding').val());
   });
   function applyLoop(bid){
     post(SX.endpoints.apply, {binding_id:bid, dry_run_token:token, chunk:20, lock_ts:lockTs}).done(function(r){
       if(r.error){ $('#sx-progress-txt').html('<span class="text-danger">'+esc(r.error==='STALE_SNAPSHOT'?SX_TXT.stale:r.error)+' '+esc(r.message||'')+'</span>'); return; }
       lockTs = r.lock_ts || 0;
-      acc.written+=r.written; acc.skipped+=r.skipped; acc.failed+=r.failed;
+      acc.written+=r.written; acc.skipped+=r.skipped; acc.blocked+=(r.blocked||0); acc.failed+=r.failed;
       var pct = total? Math.round(r.processed/total*100):100;
       $('#sx-bar').css('width', pct+'%').text(pct+'%');
-      $('#sx-progress-txt').text('processed '+r.processed+'/'+total+' · written '+acc.written+' · skipped '+acc.skipped+' · failed '+acc.failed+' · last ID '+r.last_id);
+      $('#sx-progress-txt').text('processed '+r.processed+'/'+total+' · written '+acc.written+' · skipped '+acc.skipped+' · blocked '+acc.blocked+' · failed '+acc.failed+' · last ID '+r.last_id);
       if(r.failed>0){ $('#sx-progress-txt').append(' <span class="text-danger">— stopped on write error</span>'); return; }
       if(!r.done){ applyLoop(bid); } else { $('#sx-progress-txt').append(' — '+SX_TXT.done); }
     });

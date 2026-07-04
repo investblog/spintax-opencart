@@ -121,6 +121,7 @@ final class CronRunner
 
         $written = 0;
         $skipped = 0;
+        $blocked = 0;
         $lockTs = null;
         $done = false;
         for ($i = 0; $i < $maxChunks && !$done; ++$i) {
@@ -134,6 +135,7 @@ final class CronRunner
             }
             $written += (int) ($r['written'] ?? 0);
             $skipped += (int) ($r['skipped'] ?? 0);
+            $blocked += (int) ($r['blocked'] ?? 0);
             $lockTs = isset($r['lock_ts']) ? (int) $r['lock_ts'] : null;
             $done = (bool) ($r['done'] ?? false);
         }
@@ -146,9 +148,9 @@ final class CronRunner
             $this->walk->pauseLock($bindingId, $lockTs);
         }
 
-        $this->log?->record($bindingId, 'cron', null, $written, $skipped, 0, $done ? '' : 'paused (resumes next tick)');
+        $this->log?->record($bindingId, 'cron', null, $written, $skipped, $blocked, $done ? '' : 'paused (resumes next tick)');
 
-        return array('binding_id' => $bindingId, 'written' => $written, 'skipped' => $skipped, 'done' => $done);
+        return array('binding_id' => $bindingId, 'written' => $written, 'skipped' => $skipped, 'blocked' => $blocked, 'done' => $done);
     }
 
     /** Resolve the binding's template source (the per_entity fallback too). */

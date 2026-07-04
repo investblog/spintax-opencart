@@ -157,13 +157,23 @@ final class Walk
 
         $written = 0;
         $skipped = 0;
+        $blocked = 0;
         $failed = 0;
         $lastId = 0;
 
         foreach ($ids as $pid) {
             try {
                 foreach ($this->applier->applyTo($pid, $binding, $source) as $code) {
-                    PlanCode::isWrite($code) ? ++$written : ++$skipped;
+                    switch (PlanCode::category($code)) {
+                        case 'write':
+                            ++$written;
+                            break;
+                        case 'blocked':
+                            ++$blocked; // SEO collision / missing source / forbidden clear — surfaced in logs
+                            break;
+                        default:
+                            ++$skipped;
+                    }
                 }
                 $lastId = $pid;
             } catch (\Throwable $e) {
@@ -176,6 +186,7 @@ final class Walk
                     'last_id' => $pid,
                     'written' => $written,
                     'skipped' => $skipped,
+                    'blocked' => $blocked,
                     'failed' => $failed,
                     'done' => false,
                 );
@@ -194,6 +205,7 @@ final class Walk
             'entities_total' => $total,
             'written' => $written,
             'skipped' => $skipped,
+            'blocked' => $blocked,
             'failed' => $failed,
             'last_id' => $lastId,
             'cursor' => $newCursor,

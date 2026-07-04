@@ -34,7 +34,12 @@ var SX = {{ config_json|raw }};
   $('.sx-tdel').on('click', function(){
     if(!confirm('{{ text_confirm_delete }}')) return;
     $.ajax({url:SX.endpoints.templateDelete, type:'post', dataType:'json', data:{template_id:$(this).data('id')}}).done(function(r){
-      if(r.error){ alert(r.error + (r.bindings ? ': ' + r.bindings.join(', ') : '')); } else { location.reload(); }
+      if(r.error){
+        var d=[];
+        if(r.bindings && r.bindings.length) d.push('{{ text_used_by_bindings }} ' + r.bindings.join(', '));
+        if(r.included_by && r.included_by.length) d.push('{{ text_included_by }} ' + r.included_by.join(', '));
+        alert(r.error + (d.length ? '\n' + d.join('\n') : ''));
+      } else { location.reload(); }
     });
   });
 })(jQuery);

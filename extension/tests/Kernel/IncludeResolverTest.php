@@ -111,4 +111,19 @@ final class IncludeResolverTest extends TestCase
         $this->assertStringContainsString('L4', $out);
         $this->assertStringNotContainsString('L5', $out);
     }
+
+    public function test_include_resolves_in_slug_mode(): void
+    {
+        // seo_keyword renders via Engine::renderSlug — #include must resolve there
+        // too, else the slug is built from the literal directive, not the partial.
+        $engine = new Engine(new Parser(static fn(int $a, int $b): int => $a));
+        $resolver = IncludeResolver::build($engine, static fn(string $n): ?string => 'city' === $n ? 'Berlin' : null, array(), '');
+
+        $with = $engine->renderSlug("#include \"city\"\nhotel", array(), '', 255, $resolver);
+        $this->assertStringContainsString('berlin', $with, 'the include is resolved before slugifying');
+        $this->assertStringContainsString('hotel', $with);
+
+        $without = $engine->renderSlug("#include \"city\"\nhotel", array(), '', 255);
+        $this->assertStringNotContainsString('berlin', $without, 'without a resolver the partial cannot appear');
+    }
 }
