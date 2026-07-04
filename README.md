@@ -12,6 +12,8 @@ Free and open source (GPL-3.0). A faithful OpenCart port of the WordPress
 ![PHP](https://img.shields.io/badge/PHP-8.1%2B-777bb4)
 ![OpenCart](https://img.shields.io/badge/OpenCart-3.0.x-1c9dd9)
 
+📖 **[User guide](docs/USAGE.md)** — install, quick start, the Dry run → Apply workflow, cron, and troubleshooting.
+
 ---
 
 ## Why

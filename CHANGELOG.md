@@ -4,6 +4,15 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.2.2] — 2026-07-04
+
+### Added
+- **Ukrainian (`uk-ua`) and Russian (`ru-ru`) admin translations** — the admin UI now
+  follows your OpenCart admin language (English / Ukrainian / Russian).
+- **User guide** ([`docs/USAGE.md`](docs/USAGE.md)) — installation, quick start, concepts,
+  the Dry run → Apply workflow, cron setup, multi-store / multi-language, `#include`, and
+  troubleshooting.
+
 ## [0.2.1] — 2026-07-04
 
 ### Fixed
@@ -62,6 +71,7 @@ Initial public pre-release. Ported the Spintax content engine to OpenCart 3.x:
 - Byte-identical engine kernel (parser / conditionals / plurals) with a shared
   fixture corpus against the WordPress origin.
 
+[0.2.2]: https://github.com/investblog/spintax-opencart/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/investblog/spintax-opencart/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/investblog/spintax-opencart/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/investblog/spintax-opencart/releases/tag/v0.1.0
