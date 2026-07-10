@@ -38,8 +38,8 @@ final class TemplateRepository
     public function list(): array
     {
         return $this->db->query(
-            "SELECT t.*, (SELECT COUNT(*) FROM `{$this->prefix}spintax_binding` b WHERE b.template_id = t.template_id) AS used_by "
-            . "FROM `{$this->prefix}spintax_template` t ORDER BY t.name, t.template_id"
+            "SELECT t.*, (SELECT COUNT(*) FROM `" . $this->prefix . "spintax_binding` b WHERE b.template_id = t.template_id) AS used_by "
+            . "FROM `" . $this->prefix . "spintax_template` t ORDER BY t.name, t.template_id"
         )->rows;
     }
 
@@ -47,7 +47,7 @@ final class TemplateRepository
     public function get(int $templateId): ?array
     {
         $q = $this->db->query(
-            "SELECT * FROM `{$this->prefix}spintax_template` WHERE template_id = " . (int) $templateId
+            "SELECT * FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $templateId
         );
         return $q->num_rows > 0 ? $q->row : null;
     }
@@ -59,16 +59,12 @@ final class TemplateRepository
      */
     public function save(int $templateId, string $name, string $source, string $locale = ''): array
     {
-        $n = $this->db->escape($name);
-        $s = $this->db->escape($source);
-        $l = $this->db->escape($locale);
-
         // Non-empty names must be unique so `#include "name"` is unambiguous
         // (empty names are allowed — they simply aren't includable).
         if ('' !== trim($name)) {
             $dupe = $this->db->query(
-                "SELECT template_id FROM `{$this->prefix}spintax_template` "
-                . "WHERE name = '{$n}' AND template_id <> " . (int) $templateId . " LIMIT 1"
+                "SELECT template_id FROM `" . $this->prefix . "spintax_template` "
+                . "WHERE name = '" . $this->db->escape($name) . "' AND template_id <> " . (int) $templateId . " LIMIT 1"
             );
             if ($dupe->num_rows > 0) {
                 return array('error' => 'A template with this name already exists — names must be unique for #include.');
@@ -81,7 +77,7 @@ final class TemplateRepository
             // still invalidates the template that pulled it in (§9.3), not only edits.
             $before = $this->affectedTemplateIds($templateId);
             $this->db->query(
-                "UPDATE `{$this->prefix}spintax_template` SET name = '{$n}', source = '{$s}', locale = '{$l}', date_modified = NOW() "
+                "UPDATE `" . $this->prefix . "spintax_template` SET name = '" . $this->db->escape($name) . "', source = '" . $this->db->escape($source) . "', locale = '" . $this->db->escape($locale) . "', date_modified = NOW() "
                 . "WHERE template_id = " . (int) $templateId
             );
             $after = $this->affectedTemplateIds($templateId);
@@ -90,7 +86,7 @@ final class TemplateRepository
         }
 
         $this->db->query(
-            "INSERT INTO `{$this->prefix}spintax_template` SET name = '{$n}', source = '{$s}', locale = '{$l}', date_added = NOW(), date_modified = NOW()"
+            "INSERT INTO `" . $this->prefix . "spintax_template` SET name = '" . $this->db->escape($name) . "', source = '" . $this->db->escape($source) . "', locale = '" . $this->db->escape($locale) . "', date_added = NOW(), date_modified = NOW()"
         );
         $id = (int) $this->db->query("SELECT LAST_INSERT_ID() AS id")->row['id'];
         return array('template_id' => $id, 'dependents' => 0);
@@ -111,7 +107,7 @@ final class TemplateRepository
         if (!empty($deps) || !empty($includedBy)) {
             return array('error' => 'IN_USE', 'bindings' => $deps, 'included_by' => $includedBy);
         }
-        $this->db->query("DELETE FROM `{$this->prefix}spintax_template` WHERE template_id = " . (int) $templateId);
+        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $templateId);
         return array('success' => true);
     }
 
@@ -134,7 +130,7 @@ final class TemplateRepository
             return array();
         }
         $q = $this->db->query(
-            "SELECT binding_id FROM `{$this->prefix}spintax_binding` WHERE template_id IN ({$inList})"
+            "SELECT binding_id FROM `" . $this->prefix . "spintax_binding` WHERE template_id IN (" . $inList . ")"
         );
         return array_map(static fn($r): string => (string) $r['binding_id'], $q->rows);
     }
@@ -150,8 +146,8 @@ final class TemplateRepository
         if (!empty($deps)) {
             $inList = implode(',', array_map('intval', $templateIds));
             $this->db->query(
-                "UPDATE `{$this->prefix}spintax_binding` SET cache_version = cache_version + 1, date_modified = NOW() "
-                . "WHERE template_id IN ({$inList})"
+                "UPDATE `" . $this->prefix . "spintax_binding` SET cache_version = cache_version + 1, date_modified = NOW() "
+                . "WHERE template_id IN (" . $inList . ")"
             );
         }
         return count($deps);
@@ -171,7 +167,7 @@ final class TemplateRepository
         // id => [template ids it directly #includes], edges via render's name lookup.
         $edges = array();
         $resolved = array(); // memoize name → id
-        foreach ($this->db->query("SELECT template_id, source FROM `{$this->prefix}spintax_template`")->rows as $t) {
+        foreach ($this->db->query("SELECT template_id, source FROM `" . $this->prefix . "spintax_template`")->rows as $t) {
             $ids = array();
             foreach ($this->includeNames((string) $t['source']) as $name) {
                 if (!array_key_exists($name, $resolved)) {
@@ -212,7 +208,7 @@ final class TemplateRepository
     {
         $out = array();
         foreach ($this->db->query(
-            "SELECT name, source FROM `{$this->prefix}spintax_template` WHERE template_id <> " . (int) $templateId
+            "SELECT name, source FROM `" . $this->prefix . "spintax_template` WHERE template_id <> " . (int) $templateId
         )->rows as $t) {
             foreach ($this->includeNames((string) $t['source']) as $name) {
                 if ($this->templateIdByName($name) === $templateId) {
@@ -232,7 +228,7 @@ final class TemplateRepository
     private function templateIdByName(string $name): ?int
     {
         $q = $this->db->query(
-            "SELECT template_id FROM `{$this->prefix}spintax_template` "
+            "SELECT template_id FROM `" . $this->prefix . "spintax_template` "
             . "WHERE name = '" . $this->db->escape($name) . "' ORDER BY template_id LIMIT 1"
         );
         return isset($q->row['template_id']) ? (int) $q->row['template_id'] : null;

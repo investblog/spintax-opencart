@@ -250,15 +250,13 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
             return;
         }
 
-        $prefix = DB_PREFIX;
-        $type = $this->db->escape($entity->type);
         // Signature has no entity_type column; scope the purge by joining the
         // binding (binding_id encodes the entity) so a category id can't purge a
         // product's signatures, and vice-versa.
         $this->db->query(
-            "DELETE sig FROM `{$prefix}spintax_signature` sig "
-            . "JOIN `{$prefix}spintax_binding` b ON sig.binding_id = b.binding_id "
-            . "WHERE b.entity_type = '{$type}' AND sig.entity_id = " . $entityId
+            "DELETE sig FROM `" . DB_PREFIX . "spintax_signature` sig "
+            . "JOIN `" . DB_PREFIX . "spintax_binding` b ON sig.binding_id = b.binding_id "
+            . "WHERE b.entity_type = '" . $this->db->escape($entity->type) . "' AND sig.entity_id = " . (int) $entityId
         );
         // Purge the entity's per-entity sources + bump per_entity bindings so any
         // pending dry-run snapshot is invalidated (§7.1).
@@ -562,8 +560,8 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         $entity = \Spintax\Core\Binding\EntityRegistry::get((string) ($this->request->post['entity_type'] ?? 'product'));
         if (null !== $entity && $entity->hasDescriptionTable() && $entityId > 0 && $languageId > 0) {
             $q = $this->db->query(
-                "SELECT `{$entity->nameColumn}` AS n FROM `" . DB_PREFIX . "{$entity->descriptionTable}` "
-                . "WHERE `{$entity->idColumn}` = {$entityId} AND language_id = {$languageId}"
+                "SELECT `" . $entity->nameColumn . "` AS n FROM `" . DB_PREFIX . $entity->descriptionTable . "` "
+                . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $languageId
             );
             if ($q->num_rows) {
                 $vars['name'] = (string) $q->row['n'];

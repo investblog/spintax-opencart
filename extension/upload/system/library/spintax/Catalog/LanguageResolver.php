@@ -31,7 +31,7 @@ final class LanguageResolver
     public function activeLanguages(): array
     {
         $q = $this->db->query(
-            "SELECT language_id, code FROM `{$this->prefix}language` WHERE status = '1' ORDER BY sort_order, language_id"
+            "SELECT language_id, code FROM `" . $this->prefix . "language` WHERE status = '1' ORDER BY sort_order, language_id"
         );
         $out = array();
         foreach ($q->rows as $r) {
@@ -43,14 +43,14 @@ final class LanguageResolver
     public function defaultLanguageId(): int
     {
         $s = $this->db->query(
-            "SELECT `value` FROM `{$this->prefix}setting` WHERE `key` = 'config_language' AND store_id = '0'"
+            "SELECT `value` FROM `" . $this->prefix . "setting` WHERE `key` = 'config_language' AND store_id = '0'"
         );
         $code = (string) ($s->row['value'] ?? '');
         if ('' === $code) {
             return 0;
         }
         $l = $this->db->query(
-            "SELECT language_id FROM `{$this->prefix}language` WHERE code = '" . $this->db->escape($code) . "'"
+            "SELECT language_id FROM `" . $this->prefix . "language` WHERE code = '" . $this->db->escape($code) . "'"
         );
         return (int) ($l->row['language_id'] ?? 0);
     }

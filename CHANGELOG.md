@@ -4,6 +4,21 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.2.3] — 2026-07-10
+
+### Changed
+- **SQL queries now build every value with an inline `$this->db->escape()` / `(int)`
+  cast at the point of use**, instead of interpolating a pre-escaped variable into the
+  query string (`"… WHERE name = '{$n}'"`). Behaviour is identical — the values were
+  already escaped — but OpenCart marketplace and forum moderation scanners flag
+  interpolated queries regardless of prior escaping, so the extension now passes those
+  automated checks cleanly.
+
+### Added
+- **CI SQL-safety lint** (`scripts/lint-sql.php`, wired into `.github/workflows/lint.yml`)
+  — fails the build if any shipped query is assembled with string interpolation, so the
+  pattern above can never regress into a release.
+
 ## [0.2.2] — 2026-07-04
 
 ### Added

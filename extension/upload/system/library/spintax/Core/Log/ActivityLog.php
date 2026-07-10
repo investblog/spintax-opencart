@@ -39,7 +39,7 @@ final class ActivityLog
             return;
         }
         $this->db->query(
-            "INSERT INTO `{$this->prefix}spintax_log` SET "
+            "INSERT INTO `" . $this->prefix . "spintax_log` SET "
             . "binding_id = '" . $this->db->escape($bindingId) . "', "
             . "origin = '" . $this->db->escape($origin) . "', "
             . "entity_id = " . (int) ($entityId ?? 0) . ", "
@@ -82,7 +82,7 @@ final class ActivityLog
     public function recent(int $limit = 100): array
     {
         return $this->db->query(
-            "SELECT * FROM `{$this->prefix}spintax_log` ORDER BY log_id DESC LIMIT " . max(1, (int) $limit)
+            "SELECT * FROM `" . $this->prefix . "spintax_log` ORDER BY log_id DESC LIMIT " . max(1, (int) $limit)
         )->rows;
     }
 
@@ -90,10 +90,10 @@ final class ActivityLog
     public function prune(int $keep = self::KEEP): void
     {
         $row = $this->db->query(
-            "SELECT log_id FROM `{$this->prefix}spintax_log` ORDER BY log_id DESC LIMIT 1 OFFSET " . max(0, (int) $keep)
+            "SELECT log_id FROM `" . $this->prefix . "spintax_log` ORDER BY log_id DESC LIMIT 1 OFFSET " . max(0, (int) $keep)
         )->row;
         if (!empty($row)) {
-            $this->db->query("DELETE FROM `{$this->prefix}spintax_log` WHERE log_id <= " . (int) $row['log_id']);
+            $this->db->query("DELETE FROM `" . $this->prefix . "spintax_log` WHERE log_id <= " . (int) $row['log_id']);
         }
     }
 }

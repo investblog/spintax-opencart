@@ -1,8 +1,10 @@
 name: Lint
 
-# Two lightweight lint jobs on clean Linux runners:
+# Lightweight lint jobs on clean Linux runners:
 #  - super-linter (GitHub's linter) for workflow YAML, XML (install.xml) and JSON;
-#  - a dedicated `php -l` syntax pass (no composer, so it can't trip on the lock).
+#  - a dedicated `php -l` syntax pass (no composer, so it can't trip on the lock);
+#  - sql-safety: forbids interpolated SQL ("...{$var}..."), the pattern OpenCart
+#    marketplace / opencartforum scanners reject even when the value was escaped.
 # The PSR style linters (phpcs/phpstan/psalm) are intentionally not run: the engine
 # kernel is a faithful, verbatim port of the WordPress plugin (WP conventions).
 
@@ -55,3 +57,18 @@ jobs:
         run: |
           find extension/upload extension/tests scripts -name '*.php' -print0 \
             | xargs -0 -n1 -P4 php -l
+
+  sql-safety:
+    name: SQL-safety (no interpolated queries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Forbid interpolated SQL in shipped code
+        run: php scripts/lint-sql.php extension/upload

@@ -45,7 +45,7 @@ final class Schema
     {
         $ddl = array();
 
-        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_binding` (
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `" . $prefix . "spintax_binding` (
   `binding_id`            char(11)     NOT NULL,
   `entity_type`           varchar(20)  NOT NULL,
   `target_kind`           varchar(20)  NOT NULL,
@@ -75,7 +75,7 @@ final class Schema
     (`entity_type`, `target_kind`, `target_column`, `attribute_id`, `language_scope`(64), `store_scope`(64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8";
 
-        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_template` (
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `" . $prefix . "spintax_template` (
   `template_id`   int(11)      NOT NULL AUTO_INCREMENT,
   `name`          varchar(255) NOT NULL DEFAULT '',
   `source`        mediumtext   NOT NULL,
@@ -85,7 +85,7 @@ final class Schema
   PRIMARY KEY (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8";
 
-        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_source` (
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `" . $prefix . "spintax_source` (
   `source_id`     int(11)      NOT NULL AUTO_INCREMENT,
   `entity_type`   varchar(20)  NOT NULL,
   `entity_id`     int(11)      NOT NULL,
@@ -97,7 +97,7 @@ final class Schema
   UNIQUE KEY `uniq_entity_source` (`entity_type`, `entity_id`, `language_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8";
 
-        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_signature` (
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `" . $prefix . "spintax_signature` (
   `binding_id`    char(11)     NOT NULL,
   `entity_id`     int(11)      NOT NULL,
   `language_id`   int(11)      NOT NULL,
@@ -108,7 +108,7 @@ final class Schema
   KEY `entity_purge` (`entity_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8";
 
-        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_walk` (
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `" . $prefix . "spintax_walk` (
   `binding_id`           char(11)   NOT NULL,
   `cursor_offset`        int(11)    NOT NULL DEFAULT 0,
   `total`                int(11)    NOT NULL DEFAULT 0,
@@ -125,7 +125,7 @@ final class Schema
 
         // Activity log (§15 Logs page): one row per apply event across the three
         // triggers (save / bulk / cron). Bounded by pruning to the newest N.
-        $ddl[] = "CREATE TABLE IF NOT EXISTS `{$prefix}spintax_log` (
+        $ddl[] = "CREATE TABLE IF NOT EXISTS `" . $prefix . "spintax_log` (
   `log_id`      int(11)      NOT NULL AUTO_INCREMENT,
   `binding_id`  char(11)     NOT NULL DEFAULT '',
   `origin`      varchar(10)  NOT NULL DEFAULT '',
@@ -151,7 +151,7 @@ final class Schema
     {
         // Reverse create order (no FKs declared, but keep it tidy).
         return array_map(
-            static fn(string $t): string => "DROP TABLE IF EXISTS `{$prefix}{$t}`",
+            static fn(string $t): string => "DROP TABLE IF EXISTS `" . $prefix . $t . "`",
             array_reverse(self::TABLES)
         );
     }

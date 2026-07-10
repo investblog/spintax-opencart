@@ -40,7 +40,7 @@ final class PerEntitySource
     public function get(string $entityType, int $entityId, int $langId): ?string
     {
         $q = $this->db->query(
-            "SELECT source FROM `{$this->prefix}spintax_source` "
+            "SELECT source FROM `" . $this->prefix . "spintax_source` "
             . "WHERE entity_type = '" . $this->db->escape($entityType) . "' "
             . "AND entity_id = " . (int) $entityId . " AND language_id = " . (int) $langId
         );
@@ -51,7 +51,7 @@ final class PerEntitySource
     public function loadAll(string $entityType, int $entityId): array
     {
         $q = $this->db->query(
-            "SELECT language_id, source FROM `{$this->prefix}spintax_source` "
+            "SELECT language_id, source FROM `" . $this->prefix . "spintax_source` "
             . "WHERE entity_type = '" . $this->db->escape($entityType) . "' AND entity_id = " . (int) $entityId
         );
         $out = array();
@@ -69,19 +69,18 @@ final class PerEntitySource
      */
     public function save(string $entityType, int $entityId, array $byLang): void
     {
-        $type = $this->db->escape($entityType);
         foreach ($byLang as $langId => $source) {
             $langId = (int) $langId;
             if ('' === trim((string) $source)) {
                 $this->db->query(
-                    "DELETE FROM `{$this->prefix}spintax_source` WHERE entity_type = '{$type}' "
-                    . "AND entity_id = " . (int) $entityId . " AND language_id = " . $langId
+                    "DELETE FROM `" . $this->prefix . "spintax_source` WHERE entity_type = '" . $this->db->escape($entityType) . "' "
+                    . "AND entity_id = " . (int) $entityId . " AND language_id = " . (int) $langId
                 );
                 continue;
             }
             $this->db->query(
-                "INSERT INTO `{$this->prefix}spintax_source` (entity_type, entity_id, language_id, source, date_added, date_modified) "
-                . "VALUES ('{$type}', " . (int) $entityId . ", " . $langId . ", '" . $this->db->escape((string) $source) . "', NOW(), NOW()) "
+                "INSERT INTO `" . $this->prefix . "spintax_source` (entity_type, entity_id, language_id, source, date_added, date_modified) "
+                . "VALUES ('" . $this->db->escape($entityType) . "', " . (int) $entityId . ", " . (int) $langId . ", '" . $this->db->escape((string) $source) . "', NOW(), NOW()) "
                 . "ON DUPLICATE KEY UPDATE source = VALUES(source), date_modified = NOW()"
             );
         }
@@ -92,7 +91,7 @@ final class PerEntitySource
     public function purge(string $entityType, int $entityId): void
     {
         $this->db->query(
-            "DELETE FROM `{$this->prefix}spintax_source` WHERE entity_type = '" . $this->db->escape($entityType) . "' "
+            "DELETE FROM `" . $this->prefix . "spintax_source` WHERE entity_type = '" . $this->db->escape($entityType) . "' "
             . "AND entity_id = " . (int) $entityId
         );
         $this->bump($entityType);
@@ -106,7 +105,7 @@ final class PerEntitySource
     private function bump(string $entityType): void
     {
         $this->db->query(
-            "UPDATE `{$this->prefix}spintax_binding` SET cache_version = cache_version + 1, date_modified = NOW() "
+            "UPDATE `" . $this->prefix . "spintax_binding` SET cache_version = cache_version + 1, date_modified = NOW() "
             . "WHERE entity_type = '" . $this->db->escape($entityType) . "' AND source_mode = 'per_entity'"
         );
     }

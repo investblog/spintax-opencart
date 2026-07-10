@@ -89,8 +89,8 @@ final class CronRunner
     private function dueBindings(int $limit): array
     {
         return $this->db->query(
-            "SELECT b.* FROM `{$this->prefix}spintax_binding` b "
-            . "LEFT JOIN `{$this->prefix}spintax_walk` w ON b.binding_id = w.binding_id "
+            "SELECT b.* FROM `" . $this->prefix . "spintax_binding` b "
+            . "LEFT JOIN `" . $this->prefix . "spintax_walk` w ON b.binding_id = w.binding_id "
             . "WHERE b.status = 1 AND b.cadence <> 'off' AND ("
             . "w.binding_id IS NULL "
             . "OR w.last_applied_version < b.cache_version OR w.processed < w.total "
@@ -158,7 +158,7 @@ final class CronRunner
     {
         if ((int) ($bindingRow['template_id'] ?? 0) > 0) {
             $q = $this->db->query(
-                "SELECT source FROM `{$this->prefix}spintax_template` WHERE template_id = " . (int) $bindingRow['template_id']
+                "SELECT source FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $bindingRow['template_id']
             );
             return $q->num_rows > 0 ? (string) $q->row['source'] : null;
         }
@@ -168,7 +168,7 @@ final class CronRunner
     private function lastRun(): int
     {
         $q = $this->db->query(
-            "SELECT `value` FROM `{$this->prefix}setting` "
+            "SELECT `value` FROM `" . $this->prefix . "setting` "
             . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_last_run' AND store_id = 0"
         );
         return (int) ($q->row['value'] ?? 0);
@@ -180,12 +180,12 @@ final class CronRunner
         // insert, so no duplicate rows under concurrency). If it is somehow missing,
         // create it once.
         $this->db->query(
-            "UPDATE `{$this->prefix}setting` SET `value` = '" . (int) $ts . "' "
+            "UPDATE `" . $this->prefix . "setting` SET `value` = '" . (int) $ts . "' "
             . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_last_run' AND store_id = 0"
         );
         if ($this->db->affectedRows() < 1 && 0 === $this->lastRun()) {
             $this->db->query(
-                "INSERT INTO `{$this->prefix}setting` SET store_id = 0, `code` = 'spintax_seo', `key` = 'spintax_seo_last_run', `value` = '" . (int) $ts . "', serialized = '0'"
+                "INSERT INTO `" . $this->prefix . "setting` SET store_id = 0, `code` = 'spintax_seo', `key` = 'spintax_seo_last_run', `value` = '" . (int) $ts . "', serialized = '0'"
             );
         }
     }

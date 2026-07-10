@@ -296,8 +296,8 @@ final class Applier
             return true;
         }
         $q = $this->db->query(
-            "SELECT `{$entity->statusColumn}` AS s FROM `{$this->prefix}{$entity->baseTable}` "
-            . "WHERE `{$entity->idColumn}` = " . (int) $entityId
+            "SELECT `" . $entity->statusColumn . "` AS s FROM `" . $this->prefix . $entity->baseTable . "` "
+            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId
         );
         return isset($q->row['s']) && '1' === (string) $q->row['s'];
     }
@@ -307,8 +307,8 @@ final class Applier
         // $column is whitelisted by EntityBinding::isValidColumn() (against the
         // entity descriptor) before we get here; base/id/table come from the descriptor.
         $q = $this->db->query(
-            "SELECT `{$column}` AS v FROM `{$this->prefix}{$entity->descriptionTable}` "
-            . "WHERE `{$entity->idColumn}` = " . (int) $entityId . " AND language_id = " . (int) $langId
+            "SELECT `" . $column . "` AS v FROM `" . $this->prefix . $entity->descriptionTable . "` "
+            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $langId
         );
         return (string) ($q->row['v'] ?? '');
     }
@@ -325,14 +325,14 @@ final class Applier
         if (!$entity->hasDescriptionTable()) {
             // e.g. manufacturer — the name is on the base row, not per-language.
             $q = $this->db->query(
-                "SELECT `{$entity->nameColumn}` AS n FROM `{$this->prefix}{$entity->baseTable}` "
-                . "WHERE `{$entity->idColumn}` = " . (int) $entityId
+                "SELECT `" . $entity->nameColumn . "` AS n FROM `" . $this->prefix . $entity->baseTable . "` "
+                . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId
             );
             return array('name' => (string) ($q->row['n'] ?? ''));
         }
         $q = $this->db->query(
-            "SELECT `{$entity->nameColumn}` AS n FROM `{$this->prefix}{$entity->descriptionTable}` "
-            . "WHERE `{$entity->idColumn}` = " . (int) $entityId . " AND language_id = " . (int) $langId
+            "SELECT `" . $entity->nameColumn . "` AS n FROM `" . $this->prefix . $entity->descriptionTable . "` "
+            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $langId
         );
         return array('name' => (string) ($q->row['n'] ?? ''));
     }
@@ -340,8 +340,8 @@ final class Applier
     private function writeTarget(EntityType $entity, int $entityId, int $langId, string $column, string $value): void
     {
         $this->db->query(
-            "UPDATE `{$this->prefix}{$entity->descriptionTable}` SET `{$column}` = '" . $this->db->escape($value) . "' "
-            . "WHERE `{$entity->idColumn}` = " . (int) $entityId . " AND language_id = " . (int) $langId
+            "UPDATE `" . $this->prefix . $entity->descriptionTable . "` SET `" . $column . "` = '" . $this->db->escape($value) . "' "
+            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $langId
         );
     }
 
@@ -354,7 +354,7 @@ final class Applier
             return false;
         }
         return $this->db->query(
-            "SELECT attribute_id FROM `{$this->prefix}attribute` WHERE attribute_id = " . (int) $attributeId
+            "SELECT attribute_id FROM `" . $this->prefix . "attribute` WHERE attribute_id = " . (int) $attributeId
         )->num_rows > 0;
     }
 
@@ -362,7 +362,7 @@ final class Applier
     private function readAttribute(int $productId, int $attributeId, int $langId): string
     {
         $q = $this->db->query(
-            "SELECT text FROM `{$this->prefix}product_attribute` "
+            "SELECT text FROM `" . $this->prefix . "product_attribute` "
             . "WHERE product_id = " . (int) $productId . " AND attribute_id = " . (int) $attributeId . " AND language_id = " . (int) $langId
         );
         return (string) ($q->row['text'] ?? '');
@@ -372,7 +372,7 @@ final class Applier
     private function writeAttribute(int $productId, int $attributeId, int $langId, string $text): void
     {
         $this->db->query(
-            "REPLACE INTO `{$this->prefix}product_attribute` SET "
+            "REPLACE INTO `" . $this->prefix . "product_attribute` SET "
             . "product_id = " . (int) $productId . ", attribute_id = " . (int) $attributeId . ", "
             . "language_id = " . (int) $langId . ", text = '" . $this->db->escape($text) . "'"
         );
@@ -382,7 +382,7 @@ final class Applier
     private function templateSourceByName(string $name): ?string
     {
         $q = $this->db->query(
-            "SELECT source FROM `{$this->prefix}spintax_template` "
+            "SELECT source FROM `" . $this->prefix . "spintax_template` "
             . "WHERE name = '" . $this->db->escape($name) . "' ORDER BY template_id LIMIT 1"
         );
         return isset($q->row['source']) ? (string) $q->row['source'] : null;
@@ -400,7 +400,7 @@ final class Applier
     private function seoStores(EntityType $entity, int $entityId, string $storeScope): array
     {
         $q = $this->db->query(
-            "SELECT store_id FROM `{$this->prefix}{$entity->baseTable}_to_store` WHERE `{$entity->idColumn}` = " . (int) $entityId
+            "SELECT store_id FROM `" . $this->prefix . $entity->baseTable . "_to_store` WHERE `" . $entity->idColumn . "` = " . (int) $entityId
         );
         $stores = array_map(static fn($r): int => (int) $r['store_id'], $q->rows);
         if (empty($stores)) {
@@ -418,8 +418,8 @@ final class Applier
     private function readSeoKeyword(int $storeId, int $langId, string $query): string
     {
         $q = $this->db->query(
-            "SELECT keyword FROM `{$this->prefix}seo_url` "
-            . "WHERE store_id = " . $storeId . " AND language_id = " . $langId
+            "SELECT keyword FROM `" . $this->prefix . "seo_url` "
+            . "WHERE store_id = " . (int) $storeId . " AND language_id = " . (int) $langId
             . " AND query = '" . $this->db->escape($query) . "'"
         );
         return (string) ($q->row['keyword'] ?? '');
@@ -440,8 +440,8 @@ final class Applier
             return false;
         }
         $q = $this->db->query(
-            "SELECT seo_url_id FROM `{$this->prefix}seo_url` "
-            . "WHERE store_id = " . $storeId
+            "SELECT seo_url_id FROM `" . $this->prefix . "seo_url` "
+            . "WHERE store_id = " . (int) $storeId
             . " AND keyword = '" . $this->db->escape($keyword) . "' "
             . "AND query <> '" . $this->db->escape($query) . "' LIMIT 1"
         );
@@ -487,14 +487,13 @@ final class Applier
         if ('' === $keyword) {
             return; // an empty keyword is a broken URL — never write it (P2 guard)
         }
-        $eq = $this->db->escape($query);
         $this->db->query(
-            "DELETE FROM `{$this->prefix}seo_url` WHERE store_id = " . $storeId
-            . " AND language_id = " . $langId . " AND query = '" . $eq . "'"
+            "DELETE FROM `" . $this->prefix . "seo_url` WHERE store_id = " . (int) $storeId
+            . " AND language_id = " . (int) $langId . " AND query = '" . $this->db->escape($query) . "'"
         );
         $this->db->query(
-            "INSERT INTO `{$this->prefix}seo_url` SET store_id = " . $storeId . ", language_id = " . $langId
-            . ", query = '" . $eq . "', keyword = '" . $this->db->escape($keyword) . "'"
+            "INSERT INTO `" . $this->prefix . "seo_url` SET store_id = " . (int) $storeId . ", language_id = " . (int) $langId
+            . ", query = '" . $this->db->escape($query) . "', keyword = '" . $this->db->escape($keyword) . "'"
         );
     }
 
@@ -503,7 +502,7 @@ final class Applier
     private function readSignature(string $bindingId, int $entityId, int $langId, int $storeId = -1): ?string
     {
         $q = $this->db->query(
-            "SELECT signature FROM `{$this->prefix}spintax_signature` "
+            "SELECT signature FROM `" . $this->prefix . "spintax_signature` "
             . "WHERE binding_id = '" . $this->db->escape($bindingId) . "' "
             . "AND entity_id = " . (int) $entityId . " AND language_id = " . (int) $langId . " AND store_id = " . (int) $storeId
         );
@@ -513,7 +512,7 @@ final class Applier
     private function writeSignature(string $bindingId, int $entityId, int $langId, string $signature, int $storeId = -1): void
     {
         $this->db->query(
-            "REPLACE INTO `{$this->prefix}spintax_signature` "
+            "REPLACE INTO `" . $this->prefix . "spintax_signature` "
             . "(binding_id, entity_id, language_id, store_id, signature, date_modified) VALUES ("
             . "'" . $this->db->escape($bindingId) . "', "
             . (int) $entityId . ", " . (int) $langId . ", " . (int) $storeId . ", "

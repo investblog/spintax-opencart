@@ -51,8 +51,8 @@ final class BindingAdmin
     public function all(): array
     {
         return $this->db->query(
-            "SELECT b.*, t.name AS template_name FROM `{$this->prefix}spintax_binding` b "
-            . "LEFT JOIN `{$this->prefix}spintax_template` t ON b.template_id = t.template_id "
+            "SELECT b.*, t.name AS template_name FROM `" . $this->prefix . "spintax_binding` b "
+            . "LEFT JOIN `" . $this->prefix . "spintax_template` t ON b.template_id = t.template_id "
             . "ORDER BY b.date_added"
         )->rows;
     }
@@ -61,7 +61,7 @@ final class BindingAdmin
     public function find(string $bindingId): ?array
     {
         $q = $this->db->query(
-            "SELECT * FROM `{$this->prefix}spintax_binding` WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+            "SELECT * FROM `" . $this->prefix . "spintax_binding` WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
         );
         return $q->num_rows > 0 ? $q->row : null;
     }
@@ -150,11 +150,11 @@ final class BindingAdmin
         try {
             if ($isNew) {
                 $this->db->query(
-                    "INSERT INTO `{$this->prefix}spintax_binding` SET binding_id = '" . $this->db->escape($bindingId) . "', {$set}, date_added = NOW()"
+                    "INSERT INTO `" . $this->prefix . "spintax_binding` SET binding_id = '" . $this->db->escape($bindingId) . "', " . $set . ", date_added = NOW()"
                 );
             } else {
                 $this->db->query(
-                    "UPDATE `{$this->prefix}spintax_binding` SET {$set} WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+                    "UPDATE `" . $this->prefix . "spintax_binding` SET " . $set . " WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
                 );
             }
         } catch (\Throwable $e) {
@@ -170,10 +170,10 @@ final class BindingAdmin
     public function delete(string $bindingId): void
     {
         $id = $this->db->escape($bindingId);
-        $this->db->query("DELETE FROM `{$this->prefix}spintax_binding` WHERE binding_id = '{$id}'");
+        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_binding` WHERE binding_id = '" . $id . "'");
         // Purge this binding's walk + signatures (its own bookkeeping only).
-        $this->db->query("DELETE FROM `{$this->prefix}spintax_walk` WHERE binding_id = '{$id}'");
-        $this->db->query("DELETE FROM `{$this->prefix}spintax_signature` WHERE binding_id = '{$id}'");
+        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_walk` WHERE binding_id = '" . $id . "'");
+        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_signature` WHERE binding_id = '" . $id . "'");
     }
 
     private function attributeExists(int $attributeId): bool
@@ -182,7 +182,7 @@ final class BindingAdmin
             return false;
         }
         return $this->db->query(
-            "SELECT attribute_id FROM `{$this->prefix}attribute` WHERE attribute_id = " . (int) $attributeId
+            "SELECT attribute_id FROM `" . $this->prefix . "attribute` WHERE attribute_id = " . (int) $attributeId
         )->num_rows > 0;
     }
 
@@ -190,9 +190,9 @@ final class BindingAdmin
     public function attributes(): array
     {
         $rows = $this->db->query(
-            "SELECT a.attribute_id, ad.name FROM `{$this->prefix}attribute` a "
-            . "LEFT JOIN `{$this->prefix}attribute_description` ad ON a.attribute_id = ad.attribute_id AND ad.language_id = "
-            . "(SELECT MIN(language_id) FROM `{$this->prefix}attribute_description`) "
+            "SELECT a.attribute_id, ad.name FROM `" . $this->prefix . "attribute` a "
+            . "LEFT JOIN `" . $this->prefix . "attribute_description` ad ON a.attribute_id = ad.attribute_id AND ad.language_id = "
+            . "(SELECT MIN(language_id) FROM `" . $this->prefix . "attribute_description`) "
             . "ORDER BY ad.name"
         )->rows;
         $out = array();
@@ -219,7 +219,7 @@ final class BindingAdmin
             return false;
         }
         return $this->db->query(
-            "SELECT template_id FROM `{$this->prefix}spintax_template` WHERE template_id = " . (int) $templateId
+            "SELECT template_id FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $templateId
         )->num_rows > 0;
     }
 }
