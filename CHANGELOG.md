@@ -4,6 +4,36 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.2.6] — 2026-07-14
+
+The engine stops being a copy. It is now the pinned Composer package
+[`spintax/core`](https://packagist.org/packages/spintax/core) — the same engine the WordPress plugin
+runs, MIT, zero dependencies. No behaviour change: the rendered output of 0.2.6 is byte-identical to
+0.2.5, and the committed 47 KB golden did not move.
+
+### Changed
+- **`spintax/core` is a dependency, not a vendored kernel.** OpenCart has no Composer at run time —
+  the OCMOD ships `upload/` and nothing else — so `composer run sync-kernel` unpacks the pinned
+  package into `upload/system/library/spintax/Core/`, where the extension's own PSR-4 autoloader
+  finds it. To move the engine: `composer update spintax/core && composer run sync-kernel`, then
+  commit. A test boots the shipped tree in a Composer-free PHP process, exactly the way OpenCart
+  loads it in production.
+- **`PortIntegrityTest` is gone, and its lesson is worth keeping.** It existed to prove the copied
+  kernel had not diverged from the WordPress engine — and it stayed green while the kernel drifted
+  **two commits behind**, missing both the `mailto:`/`tel:` shield and the Spanish sentence openers.
+  It compared two copies that both lived *inside this repository*, so they were stale together and it
+  agreed with itself. A checksum against a second local copy proves consistency, never freshness.
+  `KernelLoadsTest` now compares the runtime tree against the **pinned package**, which is external
+  and versioned — so a stale kernel is a red test instead of a silent divergence.
+
+### Removed
+- `extension/reference/wp-kernel-src/` and `wp-kernel-tests/` — the vendored WordPress kernel and its
+  test corpus. The pin replaces them.
+- The ported engine tests (`Parser`, `Conditionals`, `Plurals`, `Validator`, `RenderContext`). They
+  test the package's code, and the package tests it — against the shared cross-engine golden corpus,
+  in its own CI. The suite here keeps what is actually OpenCart's: orchestrator, bindings, apply and
+  walk, install, DB, sanitiser, slugs. 234 tests, 701 assertions, green.
+
 ## [0.2.5] — 2026-07-13
 
 Metadata/documentation release. No engine, schema or behaviour change — the rendered output

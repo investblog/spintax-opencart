@@ -4,8 +4,62 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "218411d0a3f2fd433dc22e42d19e4766",
-    "packages": [],
+    "content-hash": "f735ef802b0466c3ef8b661d0a0c8aae",
+    "packages": [
+        {
+            "name": "spintax/core",
+            "version": "v0.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/investblog/spintax-php.git",
+                "reference": "e8896e01b0c52fee04046501f26f7c084f364866"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/investblog/spintax-php/zipball/e8896e01b0c52fee04046501f26f7c084f364866",
+                "reference": "e8896e01b0c52fee04046501f26f7c084f364866",
+                "shasum": ""
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "php": "^8.0"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^9.6"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Spintax\\Core\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "301st",
+                    "homepage": "https://301.st"
+                }
+            ],
+            "description": "Framework-agnostic spintax engine: enumerations, permutations, variables, conditionals, plural agreement, includes and a post-processing pipeline. Zero dependencies.",
+            "homepage": "https://spintax.net",
+            "keywords": [
+                "content-generation",
+                "plural",
+                "seo",
+                "spintax",
+                "template-engine",
+                "text-spinning"
+            ],
+            "support": {
+                "issues": "https://github.com/investblog/spintax-php/issues",
+                "source": "https://github.com/investblog/spintax-php"
+            },
+            "time": "2026-07-13T22:01:54+00:00"
+        }
+    ],
     "packages-dev": [
         {
             "name": "doctrine/instantiator",
