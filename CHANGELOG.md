@@ -4,6 +4,23 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.2.5] — 2026-07-13
+
+Metadata/documentation release. No engine, schema or behaviour change — the rendered output
+of 0.2.5 is byte-identical to 0.2.4.
+
+### Fixed
+- **The OCMOD version no longer lies.** `install.xml` had carried `<version>1.0.0</version>`
+  since the first release, so OpenCart's **Extensions → Modifications** list showed `1.0.0`
+  for every build regardless of which one you actually installed — there was no way to tell
+  from the admin which version was running. It now tracks the release number (`0.2.5`) and
+  will be bumped with every release from here on.
+
+### Changed
+- `docs/ARCHITECTURE.md` brought in line with the code as built: six tables (the `spintax_log`
+  activity log was missing) and all 14 registered events across the four entities (it still
+  described a product-only event set).
+
 ## [0.2.4] — 2026-07-13
 
 Post-process fixes, synced from the WordPress kernel (spintax 2.3.3). Engine-only — no OpenCart

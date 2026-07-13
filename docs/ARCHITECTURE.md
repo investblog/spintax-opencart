@@ -62,16 +62,22 @@ walk** (not best-effort) and withholds the completion stamp.
 
 The admin controller is thin: it wires OpenCart's `$this->db` (via `OcDb`) and the
 render `Engine` into the tested library and exposes AJAX endpoints. `install()`
-creates the tables, registers the product save/add/delete **events**, grants
-permissions and seeds a demo binding; `uninstall()` deregisters and (optionally)
-drops data. All catalog writes go through **targeted direct SQL** plus a
-`cache->delete('product')` — never the destructive model rewrite.
+creates the tables, registers the **events**, grants permissions and seeds a demo
+binding; `uninstall()` deregisters and (optionally) drops data. All catalog writes
+go through **targeted direct SQL** plus a `cache->delete(...)` for the entity —
+never the destructive model rewrite.
+
+**14 events are registered** (`Installer::allEvents()` is the exact set): each of the
+four entities — product, category, information, manufacturer — contributes an
+`add`/`edit`/`delete` model hook, plus two module-level hooks (the opt-in storefront
+credit on the catalog footer, and the product-form preload for `per_entity` sources).
 
 ## Storage
 
-Five `DB_PREFIX`-prefixed InnoDB tables: `spintax_binding`, `spintax_template`,
-`spintax_source`, `spintax_signature`, `spintax_walk`. Small scalar settings live
-in OpenCart's `oc_setting` under the `spintax_seo` group.
+Six `DB_PREFIX`-prefixed InnoDB tables: `spintax_binding`, `spintax_template`,
+`spintax_source`, `spintax_signature`, `spintax_walk` and `spintax_log` (the activity
+log, pruned to the last 500 runs). `Install\Schema` holds the DDL. Small scalar
+settings live in OpenCart's `oc_setting` under the `spintax_seo` group.
 
 ## Testing
 
