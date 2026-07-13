@@ -4,6 +4,31 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.2.4] — 2026-07-13
+
+Post-process fixes, synced from the WordPress kernel (spintax 2.3.3). Engine-only — no OpenCart
+glue, schema or admin change.
+
+### Fixed
+- **A run of sentence punctuation is no longer split apart.** `Wait... what?` rendered as
+  `Wait. . . What?`, `Wow!!!` as `Wow! ! !` and `Really?!` as `Really? !` — the "add a space after
+  `.!?`" rule fired *between* the marks of a run. A run is now one sentence end, in every language.
+- **`mailto:` and `tel:` links survive rendering.** `<a href="mailto:support@example.com">` came out
+  as `href="mailto: support@example.com"` — a broken link: the address was shielded out from under
+  its prefix, and the leftover colon then got a space. The committed orchestrator golden had this
+  defect frozen into it, which is precisely what a regression lock is supposed to expose — its only
+  change in this release is that one space disappearing from an 18 KB render.
+- **Spanish sentence openers (`¿` `¡`).** The capitaliser upper-cases the first *character* after a
+  sentence end; an inverted mark has no uppercase form, so every Spanish question quietly kept a
+  lowercase first letter. Openers now carry the capital through — including `¡¿Qué haces?!` (two
+  marks) and `<p>¿<a href="/ayuda">Necesitas ayuda</a>?</p>` (an opener followed by markup).
+
+### Changed
+- Kernel re-synced from the WordPress plugin: `Core/Engine/Parser.php` and the ported ParserTest
+  corpus (+13 post-process cases). `PortIntegrityTest` byte-identity with `reference/wp-kernel-src`
+  holds; the suite is 490 tests. The same three fixes ship in the WP plugin (2.3.3) and
+  `@spintax/core`, and are locked by the shared cross-engine golden corpus.
+
 ## [0.2.3] — 2026-07-10
 
 ### Changed
