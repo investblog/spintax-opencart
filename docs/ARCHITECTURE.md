@@ -20,11 +20,21 @@ upload/admin/…extension/module/spintax_seo.*                    # thin OpenCar
 install.xml                                                      # OCMOD (sidebar menu)
 ```
 
-The **kernel** (`Core/Engine`, `Core/Render/RenderContext`) is a faithful port of
-the WordPress *Spintax* plugin — copied with only the framework-boundary edits
-(drop WP guards, `wp_json_encode`→`json_encode`) and covered by byte-identity
-tests against the original source. WordPress-specific seams (template source,
-cache, settings, output sanitisation) are reimplemented as small **shims**.
+The **kernel** (`Core/Engine`, `Core/Render`) is not a copy of anything: it is the
+[**`spintax/core`**](https://packagist.org/packages/spintax/core) Composer package
+(MIT, zero dependencies) — the very same engine the WordPress *Spintax* plugin
+runs — pinned in `composer.json` and pulled in as a dependency.
+
+OpenCart has no Composer at run time (the OCMOD ships `upload/` and nothing else,
+loaded by the extension's own PSR-4 autoloader), so the engine cannot live in
+`vendor/`: `composer run sync-kernel` unpacks the pinned package into
+`upload/system/library/spintax/Core/`, which is the tree that gets zipped.
+`KernelLoadsTest` fails if that tree drifts from the pin, and a second test boots
+the shipped tree in a Composer-free PHP process — the way OpenCart actually loads
+it — so a broken sync is caught the way it would really break.
+
+OpenCart-specific seams (template source, cache, settings, output sanitisation) are
+supplied as small **shims** around the package.
 
 ## Rendering pipeline
 
@@ -81,7 +91,13 @@ settings live in OpenCart's `oc_setting` under the `spintax_seo` group.
 
 ## Testing
 
-Kernel classes have unit tests (plus byte-identity checks against the WordPress
-source). The binding/apply/walk/template/install layers have DB integration tests
-that self-skip when no database is reachable, so `scripts/test.*` is green both on
-the dev stand and in CI (PHP 8.1 / 8.3).
+The engine is tested where it lives — in the `spintax/core` package, against a corpus
+of fixtures shared by every Spintax engine (PHP and TypeScript), so the implementations
+cannot drift apart. This repository tests what is actually OpenCart's: the render
+orchestrator, bindings, plan/apply, the chunked walk, install, the HTML sanitiser and
+slug transliteration. Plus two guards on the packaging itself — `KernelLoadsTest` (the
+shipped kernel matches the pin) and a Composer-free boot of the shipped tree.
+
+The binding/apply/walk/template/install layers have DB integration tests that self-skip
+when no database is reachable, so `scripts/test.*` is green both on the dev stand and in
+CI (PHP 8.1 / 8.3).

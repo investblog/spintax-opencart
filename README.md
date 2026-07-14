@@ -103,10 +103,12 @@ product save* per binding for automatic updates on every save.
 
 ## How it works (architecture)
 
-The engine kernel is framework-agnostic PHP under
-`upload/system/library/spintax/`; the OpenCart admin layer is a thin controller
-over it. Writes use targeted direct SQL (never the destructive `editProduct`
-full-rewrite) plus a cache flush. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+The engine is the [`spintax/core`](https://packagist.org/packages/spintax/core) package
+(MIT, zero dependencies) — **the same engine the WordPress plugin runs**, pinned as a
+dependency and unpacked into `upload/system/library/spintax/Core/` at build time, because
+OpenCart has no Composer at run time. The OpenCart layer is a thin admin controller over
+it. Writes use targeted direct SQL (never the destructive `editProduct` full-rewrite) plus
+a cache flush. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Development
 
@@ -121,9 +123,12 @@ scripts/deploy.sh                    # copy extension/upload -> the docroot
 docker compose exec -T web php /tmp/build-ocmod.php /opt/spintax /opt/spintax/spintax_seo.ocmod.zip
 ```
 
-The engine kernel is unit-tested (with byte-identity checks against the original
-WordPress kernel); the binding/apply/walk layers are covered by DB integration
-tests that self-skip when no database is reachable. CI runs on PHP 8.1 and 8.3.
+The engine itself is the [`spintax/core`](https://packagist.org/packages/spintax/core)
+package and is tested there, against a fixture corpus shared by every Spintax engine.
+This repository tests what is OpenCart's — orchestrator, bindings, plan/apply, the
+chunked walk, install, sanitiser, slugs — plus the packaging: that the shipped kernel
+matches the pin, and that it boots without Composer, the way OpenCart loads it. The DB
+integration tests self-skip when no database is reachable. CI runs on PHP 8.1 and 8.3.
 
 ## Status
 
