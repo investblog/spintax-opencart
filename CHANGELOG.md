@@ -4,6 +4,41 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.3.0] — 2026-07-19
+
+Serbian, Croatian and Bosnian plural agreement, which this extension has been missing since the
+engine gained it. Breaking for those three languages only.
+
+### Fixed
+
+- **`{plural}` now picks the right form for `sr`, `hr` and `bs`** — one for 1, 21, 101 (but not 11),
+  few for 2-4, 22-24 (but not 12-14), many for the rest, the same boundaries as Russian. Serbian
+  works in both scripts: `sr-Latn` and `sr-Cyrl` follow identical grammar.
+
+  This was **broken in the shipped extension**, not merely absent. Those locales fell through to the
+  English two-form rule, so a correct three-form template was rejected and rendered into the page as
+  `｛plural 5: sat|sata|sati｝` — visible wreckage on a live storefront. Verified before and after
+  against the shipped kernel, not inferred from the changelog.
+
+- **The engine pin could not reach the release that fixed it.** `spintax/core` was constrained to
+  `^0.1`, which before 1.0 means `>=0.1.0 <0.2.0` — so the fix, published as 0.2.0 five days ago,
+  was unreachable by construction. The constraint is now `^0.2` and the kernel is re-synced.
+
+### Changed
+
+- **Breaking for `sr` / `hr` / `bs` templates only: `{plural}` requires three forms.** A two-form
+  construct in those languages used to be accepted and rendered from the wrong set; it is now an
+  error, and on the lenient path this extension uses it is emitted verbatim in fullwidth braces.
+  Search those templates for `{plural` and add the third form. No other language changes.
+
+### Added
+
+- **CI now reports when the engine pin is behind its latest release.** `KernelLoadsTest` proves the
+  shipped tree matches the pin; nothing proved the pin matches upstream, which is exactly how this
+  extension stayed a whole minor behind with every test green. The new step is advisory rather than
+  a hard failure — turning every upstream release into a red build here, before anyone has decided
+  to take it, is how a signal gets trained away.
+
 ## [0.2.6] — 2026-07-14
 
 The engine stops being a copy. It is now the pinned Composer package

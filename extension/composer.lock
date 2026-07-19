@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f735ef802b0466c3ef8b661d0a0c8aae",
+    "content-hash": "1af4e805531e4dd34aa3171fdea14ad0",
     "packages": [
         {
             "name": "spintax/core",
-            "version": "v0.1.0",
+            "version": "v0.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/investblog/spintax-php.git",
-                "reference": "e8896e01b0c52fee04046501f26f7c084f364866"
+                "reference": "afbccbd104f89e351f2db6e3aeb20c13e67aa18a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/investblog/spintax-php/zipball/e8896e01b0c52fee04046501f26f7c084f364866",
-                "reference": "e8896e01b0c52fee04046501f26f7c084f364866",
+                "url": "https://api.github.com/repos/investblog/spintax-php/zipball/afbccbd104f89e351f2db6e3aeb20c13e67aa18a",
+                "reference": "afbccbd104f89e351f2db6e3aeb20c13e67aa18a",
                 "shasum": ""
             },
             "require": {
@@ -57,7 +57,7 @@
                 "issues": "https://github.com/investblog/spintax-php/issues",
                 "source": "https://github.com/investblog/spintax-php"
             },
-            "time": "2026-07-13T22:01:54+00:00"
+            "time": "2026-07-18T15:05:04+00:00"
         }
     ],
     "packages-dev": [
