@@ -185,41 +185,92 @@ final class OrchestratorTest extends TestCase
         $this->assertSame('Товар', $this->orch->process_template('{plural 1: товар|товара|товаров}', array(), null, 'ru-RU'));
     }
 
-    // --- #set value enumeration collapsing (WP kernel fix 13ac84a) -----------
+    // --- #set is a macro, #def is roll-once ---------------------------------
+    //
+    // These cases were written for the collapse-once `#set` and are kept as PAIRS rather than
+    // rewritten in place: the behaviour did not disappear, it moved to `#def`, and what `#set`
+    // does instead is now the documented counterpart. Deleting either half loses half the
+    // contract.
 
     /**
-     * Regression: `{plural %n%: …}` where %n% is `#set` to an enumeration used to
-     * render empty because the plural pass ran before enumeration resolution and
-     * saw an unresolved `{1|4}` count. Stage 4b collapses the #set value once so
-     * the count is numeric. Deterministic parser picks index 0 → count 1 → "item".
+     * A counter must print and agree the same number, which is what `#def` buys.
+     *
+     * Deterministic parser picks index 0 → count 1 → "item".
      */
-    public function test_plural_count_resolves_from_set_enumeration(): void
+    public function test_plural_count_resolves_from_def_enumeration(): void
     {
-        $result = $this->orch->process_template("#set %n% = {1|4}\nStock %n% {plural %n%: item|items}", array());
+        $result = $this->orch->process_template("#def %n% = {1|4}\nStock %n% {plural %n%: item|items}", array());
         $this->assertSame('Stock 1 item', $result);
     }
 
     /**
-     * A `#set` value carrying an enumeration collapses to ONE stable value, so
-     * every reference sees the same pick (not an independent roll per use).
+     * The same template under `#set` loses the plural block, on purpose: a macro is substituted
+     * verbatim, so the count slot still holds `{1|4}` when the plural pass runs.
      */
-    public function test_set_enumeration_value_is_stable_across_references(): void
+    public function test_plural_count_from_a_set_macro_drops_the_block(): void
+    {
+        $result = $this->orch->process_template("#set %n% = {1|4}\nStock %n% {plural %n%: item|items}", array());
+        $this->assertSame('Stock 1', $result);
+    }
+
+    /**
+     * A `#def` value is rolled ONCE and held, so every reference sees one pick.
+     */
+    public function test_def_enumeration_value_is_stable_across_references(): void
+    {
+        $calls = 0;
+        $orch = $this->make_sequence_orchestrator(array(0, 1), $calls);
+        $result = $orch->process_template("#def %g% = {A|B}\nPick %g% %g%", array());
+        $this->assertSame('Pick A A', $result);
+        $this->assertSame(1, $calls); // rolled once, not once per reference.
+    }
+
+    /**
+     * A `#set` value is substituted verbatim, so each reference rolls its own. Same RNG sequence
+     * as the `#def` case above: two draws consumed here, one there. That difference in draw count
+     * IS the semantic difference — a first-option RNG could not tell the two apart.
+     */
+    public function test_set_enumeration_value_re_rolls_at_every_reference(): void
     {
         $calls = 0;
         $orch = $this->make_sequence_orchestrator(array(0, 1), $calls);
         $result = $orch->process_template("#set %g% = {A|B}\nPick %g% %g%", array());
-        $this->assertSame('Pick A A', $result);
-        $this->assertSame(1, $calls); // resolved once, not once-per-reference.
+        $this->assertSame('Pick A B', $result);
+        $this->assertSame(2, $calls);
     }
 
     /**
-     * Guard: a `#set` value carrying a conditional is NOT collapsed at set-time
-     * (it may reference a variable defined on another line); it stays deferred to
-     * the body pipeline and still resolves against later-set variables.
+     * A `#set` value carrying a conditional is substituted verbatim and resolves in the body, so
+     * it still sees a variable defined on another line.
      */
-    public function test_set_value_with_conditional_still_defers(): void
+    public function test_set_value_with_conditional_resolves_in_the_body(): void
     {
         $result = $this->orch->process_template("#set %cta% = {?bonus?Claim bonus|Deposit}\n#set %bonus% = 1\n%cta%", array());
         $this->assertSame('Claim bonus', $result);
+    }
+
+    /**
+     * The roll runs after the context is assembled, so a definition can read a runtime variable.
+     * Rolling it where the old collapse-once pass sat would freeze the literal text `%who%`.
+     */
+    public function test_def_resolves_against_runtime_variables(): void
+    {
+        $result = $this->orch->process_template("#def %g% = Hello %who%\n%g% / %g%", array('who' => 'Bob'));
+        $this->assertSame('Hello Bob / Hello Bob', $result);
+    }
+
+    /**
+     * A `#def` can depend on another `#def` through a `#set` alias, which is invisible in its own
+     * text because a macro is expanded only at reference time. Declaration order is reversed on
+     * purpose: ordering on direct references alone froze `%b%` with `%a%` unexpanded, and the
+     * plural block then vanished for want of a numeric count.
+     */
+    public function test_a_def_dependency_hidden_behind_a_set_alias_is_still_ordered(): void
+    {
+        $result = $this->orch->process_template(
+            "#def %b% = %s% {plural %s%: item|items}\n#set %s% = %a%\n#def %a% = {1|4}\n%b%",
+            array()
+        );
+        $this->assertSame('1 item', $result);
     }
 }

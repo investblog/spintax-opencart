@@ -13,9 +13,12 @@ declare(strict_types=1);
 namespace Spintax\Core\Binding;
 
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 
 final class BindingRepository
 {
+    use SqlIdentifiers;
+
     private DbInterface $db;
     private string $prefix;
 
@@ -38,16 +41,21 @@ final class BindingRepository
      */
     public function enabledBindingsFor(string $entityType): array
     {
-        $q = $this->db->query(
+        $sql = sprintf(
             "SELECT b.binding_id, b.entity_type, b.target_kind, b.target_column, b.attribute_id, "
             . "b.auto_seed_empty, b.regenerate_on_save, b.preserve_manual_edits, b.clear_on_empty, "
             . "b.source_mode, b.template_id, b.seo_disambiguate, b.store_scope, t.source AS template_source "
-            . "FROM `" . $this->prefix . "spintax_binding` b "
-            . "LEFT JOIN `" . $this->prefix . "spintax_template` t ON b.template_id = t.template_id "
-            . "WHERE b.entity_type = '" . $this->db->escape($entityType) . "' "
+            . "FROM %s b "
+            . "LEFT JOIN %s t ON b.template_id = t.template_id "
+            . "WHERE b.entity_type = '%s' "
             . "AND b.target_kind IN ('description_column', 'seo_keyword', 'eav_attribute') "
-            . "AND b.status = '1' AND b.trigger_on_save = '1'"
+            . "AND b.status = '1' AND b.trigger_on_save = '1'",
+            $this->table('spintax_binding'),
+            $this->table('spintax_template'),
+            $this->db->escape($entityType)
         );
+
+        $q = $this->db->query($sql);
 
         $out = array();
         foreach ($q->rows as $row) {

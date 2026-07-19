@@ -33,9 +33,13 @@ Fast delivery, easy returns.”* — a different combination each time.
 ## Features
 
 - **Spintax engine** — synonyms `{a|b|c}`, permutations `[<config>a|b|c]`,
-  variables `%var%` / `#set`, conditionals `{?VAR?then|else}`, and locale-aware
-  plurals `{plural N: one|few|many}` (RU/UK 3-form, EN-style default).
-  Full syntax reference: **<https://spintax.net/docs/syntax>**.
+  variables `%var%` with `#set` (a macro, re-picked at every use) and `#def`
+  (picked once per render and held), conditionals `{?VAR?then|else}`, and
+  locale-aware plurals `{plural N: one|few|many}` (RU/UK/BE and SR/HR/BS 3-form,
+  EN-style default).
+  Full syntax reference: **<https://spintax.net/docs/syntax>** — note the site
+  does not cover `#def` yet; until it does, [the user guide](docs/USAGE.md) is
+  the reference for it.
 - **Entities & targets** — **products, categories, information pages, and
   manufacturers**. Fill description-columns (meta title/description/keyword +
   the HTML description), **SEO-URL keywords** (`oc_seo_url`, with a per-store

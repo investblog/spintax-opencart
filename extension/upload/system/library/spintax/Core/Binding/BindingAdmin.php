@@ -16,10 +16,13 @@ declare(strict_types=1);
 namespace Spintax\Core\Binding;
 
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 use Spintax\Support\BindingId;
 
 final class BindingAdmin
 {
+    use SqlIdentifiers;
+
     private DbInterface $db;
     private string $prefix;
 
@@ -50,19 +53,27 @@ final class BindingAdmin
     /** @return array<int, array<string, mixed>> all bindings + template name */
     public function all(): array
     {
-        return $this->db->query(
-            "SELECT b.*, t.name AS template_name FROM `" . $this->prefix . "spintax_binding` b "
-            . "LEFT JOIN `" . $this->prefix . "spintax_template` t ON b.template_id = t.template_id "
-            . "ORDER BY b.date_added"
-        )->rows;
+        $sql = sprintf(
+            "SELECT b.*, t.name AS template_name FROM %s b "
+            . "LEFT JOIN %s t ON b.template_id = t.template_id "
+            . "ORDER BY b.date_added",
+            $this->table('spintax_binding'),
+            $this->table('spintax_template')
+        );
+
+        return $this->db->query($sql)->rows;
     }
 
     /** @return array<string, mixed>|null */
     public function find(string $bindingId): ?array
     {
-        $q = $this->db->query(
-            "SELECT * FROM `" . $this->prefix . "spintax_binding` WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+        $sql = sprintf(
+            "SELECT * FROM %s WHERE binding_id = '%s'",
+            $this->table('spintax_binding'),
+            $this->db->escape($bindingId)
         );
+
+        $q = $this->db->query($sql);
         return $q->num_rows > 0 ? $q->row : null;
     }
 
@@ -149,13 +160,23 @@ final class BindingAdmin
 
         try {
             if ($isNew) {
-                $this->db->query(
-                    "INSERT INTO `" . $this->prefix . "spintax_binding` SET binding_id = '" . $this->db->escape($bindingId) . "', " . $set . ", date_added = NOW()"
+                $sql = sprintf(
+                    "INSERT INTO %s SET binding_id = '%s', %s, date_added = NOW()",
+                    $this->table('spintax_binding'),
+                    $this->db->escape($bindingId),
+                    $set
                 );
+
+                $this->db->query($sql);
             } else {
-                $this->db->query(
-                    "UPDATE `" . $this->prefix . "spintax_binding` SET " . $set . " WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+                $sql = sprintf(
+                    "UPDATE %s SET %s WHERE binding_id = '%s'",
+                    $this->table('spintax_binding'),
+                    $set,
+                    $this->db->escape($bindingId)
                 );
+
+                $this->db->query($sql);
             }
         } catch (\Throwable $e) {
             if (false !== stripos($e->getMessage(), 'uniq_binding_target') || false !== stripos($e->getMessage(), 'Duplicate entry')) {
@@ -170,10 +191,13 @@ final class BindingAdmin
     public function delete(string $bindingId): void
     {
         $id = $this->db->escape($bindingId);
-        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_binding` WHERE binding_id = '" . $id . "'");
+        $sql = sprintf("DELETE FROM %s WHERE binding_id = '%s'", $this->table('spintax_binding'), $id);
+        $this->db->query($sql);
         // Purge this binding's walk + signatures (its own bookkeeping only).
-        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_walk` WHERE binding_id = '" . $id . "'");
-        $this->db->query("DELETE FROM `" . $this->prefix . "spintax_signature` WHERE binding_id = '" . $id . "'");
+        $sql = sprintf("DELETE FROM %s WHERE binding_id = '%s'", $this->table('spintax_walk'), $id);
+        $this->db->query($sql);
+        $sql = sprintf("DELETE FROM %s WHERE binding_id = '%s'", $this->table('spintax_signature'), $id);
+        $this->db->query($sql);
     }
 
     private function attributeExists(int $attributeId): bool
@@ -181,20 +205,28 @@ final class BindingAdmin
         if ($attributeId <= 0) {
             return false;
         }
-        return $this->db->query(
-            "SELECT attribute_id FROM `" . $this->prefix . "attribute` WHERE attribute_id = " . (int) $attributeId
-        )->num_rows > 0;
+        $sql = sprintf(
+            "SELECT attribute_id FROM %s WHERE attribute_id = %d",
+            $this->table('attribute'),
+            $attributeId
+        );
+
+        return $this->db->query($sql)->num_rows > 0;
     }
 
     /** @return array<int, array{value:int, label:string}> product attributes for the eav dropdown. */
     public function attributes(): array
     {
-        $rows = $this->db->query(
-            "SELECT a.attribute_id, ad.name FROM `" . $this->prefix . "attribute` a "
-            . "LEFT JOIN `" . $this->prefix . "attribute_description` ad ON a.attribute_id = ad.attribute_id AND ad.language_id = "
-            . "(SELECT MIN(language_id) FROM `" . $this->prefix . "attribute_description`) "
-            . "ORDER BY ad.name"
-        )->rows;
+        $sql = sprintf(
+            'SELECT a.attribute_id, ad.name FROM %1$s a '
+            . 'LEFT JOIN %2$s ad ON a.attribute_id = ad.attribute_id AND ad.language_id = '
+            . '(SELECT MIN(language_id) FROM %2$s) '
+            . 'ORDER BY ad.name',
+            $this->table('attribute'),
+            $this->table('attribute_description')
+        );
+
+        $rows = $this->db->query($sql)->rows;
         $out = array();
         foreach ($rows as $r) {
             $out[] = array('value' => (int) $r['attribute_id'], 'label' => (string) ($r['name'] ?? ('#' . $r['attribute_id'])));
@@ -218,8 +250,12 @@ final class BindingAdmin
         if ($templateId <= 0) {
             return false;
         }
-        return $this->db->query(
-            "SELECT template_id FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $templateId
-        )->num_rows > 0;
+        $sql = sprintf(
+            "SELECT template_id FROM %s WHERE template_id = %d",
+            $this->table('spintax_template'),
+            $templateId
+        );
+
+        return $this->db->query($sql)->num_rows > 0;
     }
 }

@@ -28,9 +28,12 @@ namespace Spintax\Core\Cron;
 use Spintax\Core\Binding\Walk;
 use Spintax\Core\Log\ActivityLog;
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 
 final class CronRunner
 {
+    use SqlIdentifiers;
+
     private DbInterface $db;
     private string $prefix;
     private Walk $walk;
@@ -88,15 +91,20 @@ final class CronRunner
      */
     private function dueBindings(int $limit): array
     {
-        return $this->db->query(
-            "SELECT b.* FROM `" . $this->prefix . "spintax_binding` b "
-            . "LEFT JOIN `" . $this->prefix . "spintax_walk` w ON b.binding_id = w.binding_id "
+        $sql = sprintf(
+            "SELECT b.* FROM %s b "
+            . "LEFT JOIN %s w ON b.binding_id = w.binding_id "
             . "WHERE b.status = 1 AND b.cadence <> 'off' AND ("
             . "w.binding_id IS NULL "
             . "OR w.last_applied_version < b.cache_version OR w.processed < w.total "
             . "OR (w.walk_failed = 1 AND w.date_modified < (NOW() - INTERVAL 1 HOUR))) "
-            . "ORDER BY b.date_modified LIMIT " . (int) $limit
-        )->rows;
+            . "ORDER BY b.date_modified LIMIT %d",
+            $this->table('spintax_binding'),
+            $this->table('spintax_walk'),
+            $limit
+        );
+
+        return $this->db->query($sql)->rows;
     }
 
     /** @param array<string, mixed> $bindingRow */
@@ -157,9 +165,13 @@ final class CronRunner
     private function sourceFor(array $bindingRow): ?string
     {
         if ((int) ($bindingRow['template_id'] ?? 0) > 0) {
-            $q = $this->db->query(
-                "SELECT source FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $bindingRow['template_id']
+            $sql = sprintf(
+                "SELECT source FROM %s WHERE template_id = %d",
+                $this->table('spintax_template'),
+                $bindingRow['template_id']
             );
+
+            $q = $this->db->query($sql);
             return $q->num_rows > 0 ? (string) $q->row['source'] : null;
         }
         return null;
@@ -167,10 +179,13 @@ final class CronRunner
 
     private function lastRun(): int
     {
-        $q = $this->db->query(
-            "SELECT `value` FROM `" . $this->prefix . "setting` "
-            . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_last_run' AND store_id = 0"
+        $sql = sprintf(
+            "SELECT `value` FROM %s "
+            . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_last_run' AND store_id = 0",
+            $this->table('setting')
         );
+
+        $q = $this->db->query($sql);
         return (int) ($q->row['value'] ?? 0);
     }
 
@@ -179,14 +194,23 @@ final class CronRunner
         // The row is seeded at install, so a plain UPDATE is enough (no delete-then-
         // insert, so no duplicate rows under concurrency). If it is somehow missing,
         // create it once.
-        $this->db->query(
-            "UPDATE `" . $this->prefix . "setting` SET `value` = '" . (int) $ts . "' "
-            . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_last_run' AND store_id = 0"
+        $sql = sprintf(
+            "UPDATE %s SET `value` = '%d' "
+            . "WHERE `code` = 'spintax_seo' AND `key` = 'spintax_seo_last_run' AND store_id = 0",
+            $this->table('setting'),
+            $ts
         );
+
+        $this->db->query($sql);
         if ($this->db->affectedRows() < 1 && 0 === $this->lastRun()) {
-            $this->db->query(
-                "INSERT INTO `" . $this->prefix . "setting` SET store_id = 0, `code` = 'spintax_seo', `key` = 'spintax_seo_last_run', `value` = '" . (int) $ts . "', serialized = '0'"
+            $sql = sprintf(
+                "INSERT INTO %s SET store_id = 0, `code` = 'spintax_seo', "
+                . "`key` = 'spintax_seo_last_run', `value` = '%d', serialized = '0'",
+                $this->table('setting'),
+                $ts
             );
+
+            $this->db->query($sql);
         }
     }
 }

@@ -13,9 +13,12 @@ declare(strict_types=1);
 namespace Spintax\Catalog;
 
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 
 final class LanguageResolver
 {
+    use SqlIdentifiers;
+
     private DbInterface $db;
     private string $prefix;
 
@@ -30,9 +33,12 @@ final class LanguageResolver
      */
     public function activeLanguages(): array
     {
-        $q = $this->db->query(
-            "SELECT language_id, code FROM `" . $this->prefix . "language` WHERE status = '1' ORDER BY sort_order, language_id"
+        $sql = sprintf(
+            "SELECT language_id, code FROM %s WHERE status = '1' ORDER BY sort_order, language_id",
+            $this->table('language')
         );
+
+        $q = $this->db->query($sql);
         $out = array();
         foreach ($q->rows as $r) {
             $out[(int) $r['language_id']] = (string) $r['code'];
@@ -42,16 +48,23 @@ final class LanguageResolver
 
     public function defaultLanguageId(): int
     {
-        $s = $this->db->query(
-            "SELECT `value` FROM `" . $this->prefix . "setting` WHERE `key` = 'config_language' AND store_id = '0'"
+        $sql = sprintf(
+            "SELECT `value` FROM %s WHERE `key` = 'config_language' AND store_id = '0'",
+            $this->table('setting')
         );
+
+        $s = $this->db->query($sql);
         $code = (string) ($s->row['value'] ?? '');
         if ('' === $code) {
             return 0;
         }
-        $l = $this->db->query(
-            "SELECT language_id FROM `" . $this->prefix . "language` WHERE code = '" . $this->db->escape($code) . "'"
+        $sql = sprintf(
+            "SELECT language_id FROM %s WHERE code = '%s'",
+            $this->table('language'),
+            $this->db->escape($code)
         );
+
+        $l = $this->db->query($sql);
         return (int) ($l->row['language_id'] ?? 0);
     }
 

@@ -22,10 +22,13 @@ namespace Spintax\Core\Binding;
 use Spintax\Catalog\LanguageResolver;
 use Spintax\Core\Template\IncludeResolver;
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 use Spintax\Engine;
 
 final class Applier
 {
+    use SqlIdentifiers;
+
     private DbInterface $db;
     private string $prefix;
     private Engine $engine;
@@ -295,10 +298,16 @@ final class Applier
         if (!$entity->hasStatus()) {
             return true;
         }
-        $q = $this->db->query(
-            "SELECT `" . $entity->statusColumn . "` AS s FROM `" . $this->prefix . $entity->baseTable . "` "
-            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId
+        $sql = sprintf(
+            "SELECT `%s` AS s FROM %s "
+            . "WHERE `%s` = %d",
+            $this->column($entity->statusColumn),
+            $this->table($entity->baseTable),
+            $this->column($entity->idColumn),
+            $entityId
         );
+
+        $q = $this->db->query($sql);
         return isset($q->row['s']) && '1' === (string) $q->row['s'];
     }
 
@@ -306,10 +315,17 @@ final class Applier
     {
         // $column is whitelisted by EntityBinding::isValidColumn() (against the
         // entity descriptor) before we get here; base/id/table come from the descriptor.
-        $q = $this->db->query(
-            "SELECT `" . $column . "` AS v FROM `" . $this->prefix . $entity->descriptionTable . "` "
-            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $langId
+        $sql = sprintf(
+            "SELECT `%s` AS v FROM %s "
+            . "WHERE `%s` = %d AND language_id = %d",
+            $this->column($column),
+            $this->table((string) $entity->descriptionTable),
+            $this->column($entity->idColumn),
+            $entityId,
+            $langId
         );
+
+        $q = $this->db->query($sql);
         return (string) ($q->row['v'] ?? '');
     }
 
@@ -324,25 +340,46 @@ final class Applier
     {
         if (!$entity->hasDescriptionTable()) {
             // e.g. manufacturer — the name is on the base row, not per-language.
-            $q = $this->db->query(
-                "SELECT `" . $entity->nameColumn . "` AS n FROM `" . $this->prefix . $entity->baseTable . "` "
-                . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId
+            $sql = sprintf(
+                "SELECT `%s` AS n FROM %s "
+                . "WHERE `%s` = %d",
+                $this->column($entity->nameColumn),
+                $this->table($entity->baseTable),
+                $this->column($entity->idColumn),
+                $entityId
             );
+
+            $q = $this->db->query($sql);
             return array('name' => (string) ($q->row['n'] ?? ''));
         }
-        $q = $this->db->query(
-            "SELECT `" . $entity->nameColumn . "` AS n FROM `" . $this->prefix . $entity->descriptionTable . "` "
-            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $langId
+        $sql = sprintf(
+            "SELECT `%s` AS n FROM %s "
+            . "WHERE `%s` = %d AND language_id = %d",
+            $this->column($entity->nameColumn),
+            $this->table((string) $entity->descriptionTable),
+            $this->column($entity->idColumn),
+            $entityId,
+            $langId
         );
+
+        $q = $this->db->query($sql);
         return array('name' => (string) ($q->row['n'] ?? ''));
     }
 
     private function writeTarget(EntityType $entity, int $entityId, int $langId, string $column, string $value): void
     {
-        $this->db->query(
-            "UPDATE `" . $this->prefix . $entity->descriptionTable . "` SET `" . $column . "` = '" . $this->db->escape($value) . "' "
-            . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $langId
+        $sql = sprintf(
+            "UPDATE %s SET `%s` = '%s' "
+            . "WHERE `%s` = %d AND language_id = %d",
+            $this->table((string) $entity->descriptionTable),
+            $this->column($column),
+            $this->db->escape($value),
+            $this->column($entity->idColumn),
+            $entityId,
+            $langId
         );
+
+        $this->db->query($sql);
     }
 
     // --- eav_attribute target (oc_product_attribute, §8.5.5) ------------------
@@ -353,38 +390,59 @@ final class Applier
         if ($attributeId <= 0) {
             return false;
         }
-        return $this->db->query(
-            "SELECT attribute_id FROM `" . $this->prefix . "attribute` WHERE attribute_id = " . (int) $attributeId
-        )->num_rows > 0;
+        $sql = sprintf(
+            "SELECT attribute_id FROM %s WHERE attribute_id = %d",
+            $this->table('attribute'),
+            $attributeId
+        );
+
+        return $this->db->query($sql)->num_rows > 0;
     }
 
     /** Current attribute text for (product, attribute, language), '' if none. */
     private function readAttribute(int $productId, int $attributeId, int $langId): string
     {
-        $q = $this->db->query(
-            "SELECT text FROM `" . $this->prefix . "product_attribute` "
-            . "WHERE product_id = " . (int) $productId . " AND attribute_id = " . (int) $attributeId . " AND language_id = " . (int) $langId
+        $sql = sprintf(
+            "SELECT text FROM %s "
+            . "WHERE product_id = %d AND attribute_id = %d AND language_id = %d",
+            $this->table('product_attribute'),
+            $productId,
+            $attributeId,
+            $langId
         );
+
+        $q = $this->db->query($sql);
         return (string) ($q->row['text'] ?? '');
     }
 
     /** Upsert the attribute text (PK = product_id, attribute_id, language_id). */
     private function writeAttribute(int $productId, int $attributeId, int $langId, string $text): void
     {
-        $this->db->query(
-            "REPLACE INTO `" . $this->prefix . "product_attribute` SET "
-            . "product_id = " . (int) $productId . ", attribute_id = " . (int) $attributeId . ", "
-            . "language_id = " . (int) $langId . ", text = '" . $this->db->escape($text) . "'"
+        $sql = sprintf(
+            "REPLACE INTO %s SET "
+            . "product_id = %d, attribute_id = %d, "
+            . "language_id = %d, text = '%s'",
+            $this->table('product_attribute'),
+            $productId,
+            $attributeId,
+            $langId,
+            $this->db->escape($text)
         );
+
+        $this->db->query($sql);
     }
 
     /** Resolve a `#include`d template's source by name (first match), null if none. */
     private function templateSourceByName(string $name): ?string
     {
-        $q = $this->db->query(
-            "SELECT source FROM `" . $this->prefix . "spintax_template` "
-            . "WHERE name = '" . $this->db->escape($name) . "' ORDER BY template_id LIMIT 1"
+        $sql = sprintf(
+            "SELECT source FROM %s "
+            . "WHERE name = '%s' ORDER BY template_id LIMIT 1",
+            $this->table('spintax_template'),
+            $this->db->escape($name)
         );
+
+        $q = $this->db->query($sql);
         return isset($q->row['source']) ? (string) $q->row['source'] : null;
     }
 
@@ -399,9 +457,14 @@ final class Applier
      */
     private function seoStores(EntityType $entity, int $entityId, string $storeScope): array
     {
-        $q = $this->db->query(
-            "SELECT store_id FROM `" . $this->prefix . $entity->baseTable . "_to_store` WHERE `" . $entity->idColumn . "` = " . (int) $entityId
+        $sql = sprintf(
+            "SELECT store_id FROM %s WHERE `%s` = %d",
+            $this->table($entity->baseTable . '_to_store'),
+            $this->column($entity->idColumn),
+            $entityId
         );
+
+        $q = $this->db->query($sql);
         $stores = array_map(static fn($r): int => (int) $r['store_id'], $q->rows);
         if (empty($stores)) {
             $stores = array(0); // no explicit mapping → default store
@@ -417,11 +480,17 @@ final class Applier
     /** Current keyword stored for this (store, language, query), '' if none. */
     private function readSeoKeyword(int $storeId, int $langId, string $query): string
     {
-        $q = $this->db->query(
-            "SELECT keyword FROM `" . $this->prefix . "seo_url` "
-            . "WHERE store_id = " . (int) $storeId . " AND language_id = " . (int) $langId
-            . " AND query = '" . $this->db->escape($query) . "'"
+        $sql = sprintf(
+            "SELECT keyword FROM %s "
+            . "WHERE store_id = %d AND language_id = %d"
+            . " AND query = '%s'",
+            $this->table('seo_url'),
+            $storeId,
+            $langId,
+            $this->db->escape($query)
         );
+
+        $q = $this->db->query($sql);
         return (string) ($q->row['keyword'] ?? '');
     }
 
@@ -439,12 +508,18 @@ final class Applier
         if ('' === $keyword) {
             return false;
         }
-        $q = $this->db->query(
-            "SELECT seo_url_id FROM `" . $this->prefix . "seo_url` "
-            . "WHERE store_id = " . (int) $storeId
-            . " AND keyword = '" . $this->db->escape($keyword) . "' "
-            . "AND query <> '" . $this->db->escape($query) . "' LIMIT 1"
+        $sql = sprintf(
+            "SELECT seo_url_id FROM %s "
+            . "WHERE store_id = %d"
+            . " AND keyword = '%s' "
+            . "AND query <> '%s' LIMIT 1",
+            $this->table('seo_url'),
+            $storeId,
+            $this->db->escape($keyword),
+            $this->db->escape($query)
         );
+
+        $q = $this->db->query($sql);
         return $q->num_rows > 0;
     }
 
@@ -487,36 +562,65 @@ final class Applier
         if ('' === $keyword) {
             return; // an empty keyword is a broken URL — never write it (P2 guard)
         }
-        $this->db->query(
-            "DELETE FROM `" . $this->prefix . "seo_url` WHERE store_id = " . (int) $storeId
-            . " AND language_id = " . (int) $langId . " AND query = '" . $this->db->escape($query) . "'"
+        $deleteSql = sprintf(
+            "DELETE FROM %s WHERE store_id = %d"
+            . " AND language_id = %d AND query = '%s'",
+            $this->table('seo_url'),
+            $storeId,
+            $langId,
+            $this->db->escape($query)
         );
-        $this->db->query(
-            "INSERT INTO `" . $this->prefix . "seo_url` SET store_id = " . (int) $storeId . ", language_id = " . (int) $langId
-            . ", query = '" . $this->db->escape($query) . "', keyword = '" . $this->db->escape($keyword) . "'"
+
+        $this->db->query($deleteSql);
+
+        $insertSql = sprintf(
+            "INSERT INTO %s SET store_id = %d, language_id = %d"
+            . ", query = '%s', keyword = '%s'",
+            $this->table('seo_url'),
+            $storeId,
+            $langId,
+            $this->db->escape($query),
+            $this->db->escape($keyword)
         );
+
+        $this->db->query($insertSql);
     }
 
     // --- signatures (store_id = -1 for description_column; real store for seo) --
 
     private function readSignature(string $bindingId, int $entityId, int $langId, int $storeId = -1): ?string
     {
-        $q = $this->db->query(
-            "SELECT signature FROM `" . $this->prefix . "spintax_signature` "
-            . "WHERE binding_id = '" . $this->db->escape($bindingId) . "' "
-            . "AND entity_id = " . (int) $entityId . " AND language_id = " . (int) $langId . " AND store_id = " . (int) $storeId
+        $sql = sprintf(
+            "SELECT signature FROM %s "
+            . "WHERE binding_id = '%s' "
+            . "AND entity_id = %d AND language_id = %d AND store_id = %d",
+            $this->table('spintax_signature'),
+            $this->db->escape($bindingId),
+            $entityId,
+            $langId,
+            $storeId
         );
+
+        $q = $this->db->query($sql);
         return isset($q->row['signature']) ? (string) $q->row['signature'] : null;
     }
 
     private function writeSignature(string $bindingId, int $entityId, int $langId, string $signature, int $storeId = -1): void
     {
-        $this->db->query(
-            "REPLACE INTO `" . $this->prefix . "spintax_signature` "
+        $sql = sprintf(
+            "REPLACE INTO %s "
             . "(binding_id, entity_id, language_id, store_id, signature, date_modified) VALUES ("
-            . "'" . $this->db->escape($bindingId) . "', "
-            . (int) $entityId . ", " . (int) $langId . ", " . (int) $storeId . ", "
-            . "'" . $this->db->escape($signature) . "', NOW())"
+            . "'%s', "
+            . "%d, %d, %d, "
+            . "'%s', NOW())",
+            $this->table('spintax_signature'),
+            $this->db->escape($bindingId),
+            $entityId,
+            $langId,
+            $storeId,
+            $this->db->escape($signature)
         );
+
+        $this->db->query($sql);
     }
 }

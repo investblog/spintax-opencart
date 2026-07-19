@@ -4,6 +4,68 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.4.0] — 2026-07-19
+
+`#set` goes back to being a macro, a new `#def` holds a value for the whole render, and every SQL
+query is rebuilt so the marketplace scanner has nothing left to point at.
+
+### Changed
+
+- **Breaking: `#set` is a macro — it is re-picked at every use.** A variable defined with `#set` is
+  substituted wherever it appears, and any `{a|b}` or `[a|b]` inside it rolls fresh each time. The
+  engine briefly picked such a value once and held it; that behaviour moves to `#def`.
+
+- **Action required if you used `#set` for a plural count.** `#set %n% = {1|4}` followed by
+  `{plural %n%: item|items}` no longer works — the count is still spintax when the plural is
+  decided, so the block renders empty. Change that one line to `#def`; the `%n%` references stay
+  exactly as they are. The same applies to a `#set` used to pull a synonym out of a `{plural}` form
+  slot, and to any `#set` you relied on reading the same twice on one page.
+
+### Added
+
+- **`#def %var% = value` — picked once per render and held.** `#def %brand% = {Acme|Acme Group}`
+  picks one variant and every `%brand%` on that page reads the same. Use it whenever two mentions
+  disagreeing would look like a mistake: a product name, a tone, and above all a number you both
+  print and agree grammatically.
+
+  It resolves **after** the variable context exists, so a definition can read global and runtime
+  variables, and it resolves in dependency order — including when one definition reaches another
+  through a `#set`, which is invisible in its own text because a macro is expanded only at
+  reference time.
+
+### Security
+
+- **Every SQL query in the shipped tree is rebuilt so no string concatenation reaches
+  `db->query()`** — the library *and* the admin controller. Each statement is composed with
+  `sprintf()` into a variable that is passed on its own; table and column names go through
+  `SqlIdentifiers::table()` / `column()`, which accept only `^[a-z_]+$` (an identifier cannot be
+  escaped, so it has to be validated); id lists go through `intList()`, which makes "digits and
+  commas only" a post-condition instead of a convention.
+
+- **`scripts/lint-sql.php` now enforces that rule instead of the one it replaced.** It previously
+  banned only PHP interpolation and its own docblock *recommended* escape-plus-concatenate — the
+  exact shape the scanner rejects. So the lint was a false assurance: it passed the admin controller
+  cleanly while that file carried four concatenated `query()` calls. It now fails on either pattern,
+  and the CI `sql-safety` job runs it over the whole `upload/` tree.
+
+  **No vulnerability was found, and none is being fixed here.** Every value already went through
+  `db->escape()` or an `(int)` cast, and the table prefix is `DB_PREFIX` from `config.php` — a
+  deployment constant, not request data. What the marketplace scanner objects to is the
+  concatenation itself, which it cannot see through: the escaping was one line above the string it
+  was protecting. Moving the composition off the call site makes the safety structural rather than
+  something a reader has to reconstruct, and `%d` is a harder coercion than a cast that a later
+  edit could drop.
+
+  `Install/Schema.php` is deliberately untouched: it builds DDL from `DB_PREFIX` and hardcoded
+  table literals, has no `db->query()` of its own, and rewriting six `CREATE TABLE` blocks would be
+  risk without a reader on the other side.
+
+### Fixed
+
+- **CI reports when the engine pin falls behind its latest release.** Added in 0.3.0 and worth
+  repeating: `KernelLoadsTest` proves the shipped tree matches the pin, but nothing proved the pin
+  matches upstream — which is how the extension stayed a whole minor behind with every test green.
+
 ## [0.3.0] — 2026-07-19
 
 Serbian, Croatian and Bosnian plural agreement, which this extension has been missing since the

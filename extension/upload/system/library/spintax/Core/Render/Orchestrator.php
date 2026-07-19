@@ -75,33 +75,28 @@ final class Orchestrator
         // Stage 3: Strip comments.
         $text = $this->parser->strip_comments($raw);
 
-        // Stage 4: Parse #set, strip from body.
-        $extracted = $this->parser->extract_set_directives($text);
+        // Stage 4: Parse #set and #def, strip both from the body.
+        $extracted = $this->parser->extract_directives($text);
         $text = $extracted['body'];
 
-        // Stage 4b: Collapse enumerations inside #set values once, so a local
-        // variable holds a single stable value (e.g. `#set %n% = {1|4|9}` → "4").
-        // This keeps repeated `%n%` references consistent and — critically — lets
-        // `{plural %n%: …}` see a numeric count instead of an unresolved `{1|4|9}`
-        // that the plural pass (which runs before enumeration resolution) would
-        // drop. Values carrying conditionals/plurals are left untouched: those
-        // constructs may reference variables defined on other lines and must stay
-        // deferred to the body pipeline (Stages 6a–6d).
-        foreach ($extracted['variables'] as $set_name => $set_value) {
-            if (false === strpos($set_value, '{')) {
-                continue;
-            }
-            if (false !== strpos($set_value, '{?') || false !== strpos($set_value, '{plural ')) {
-                continue;
-            }
-            $extracted['variables'][$set_name] = $this->parser->resolve_enumerations($set_value);
-        }
-
-        // Stage 5: Build variable context.
-        $context = $context->with_local($extracted['variables']);
+        // Stage 5: Build variable context. `#set` values go in RAW — a `#set` is a macro,
+        // substituted at every `%var%` reference, so whatever brackets it holds re-roll each time.
+        $context = $context->with_local($extracted['set']);
         if (!empty($runtime_vars)) {
             $context = $context->with_runtime($runtime_vars);
         }
+
+        // Stage 5b: Roll `#def` values ONCE — and only now, because the full context has to exist
+        // first. A `#def` value is rendered as if it were a miniature body and the result is frozen
+        // for every reference. Rolling it earlier (where the old collapse-once pass sat) would hand
+        // the roll a context with no globals and no runtime variables, so a definition built out of
+        // one would freeze the literal `%var%` text.
+        if (!empty($extracted['def'])) {
+            $context = $context->with_local(
+                $this->roll_definitions($extracted['def'], $context, $runtime_vars, $locale)
+            );
+        }
+
         $all_vars = $context->get_merged_variables();
 
         // Shield #include lines before spintax resolution so the permutation
@@ -161,5 +156,55 @@ final class Orchestrator
 
         // Stage 11 (sanitize) is deliberately NOT here — see the class docblock.
         return $text;
+    }
+
+    /**
+     * Render each `#def` value once, in dependency order, and return the frozen results.
+     *
+     * Mirrors the WordPress plugin's `Renderer::roll_definitions()` and the package's
+     * `Pipeline::roll_definitions()`. It is a reimplementation rather than a call, because both of
+     * those live in private methods of classes this extension does not use — this orchestrator IS
+     * the OpenCart host layer. That makes the stage order written down in four places; keep them in
+     * step.
+     *
+     * Ordering comes from the engine's own `Parser::order_definitions()`, which follows aliases:
+     * a `#def` can reach another `#def` through a `#set`, and because a macro is expanded only at
+     * reference time that dependency is invisible in the first definition's own text. The alias map
+     * is every macro value a definition can see, minus the definitions that will actually be rolled
+     * — one the runtime outranks is left in, since the runtime value is what really gets
+     * substituted.
+     *
+     * @param array<string, string> $definitions  Raw `#def` values, name => value.
+     * @param RenderContext         $context      Context with globals, `#set` locals and runtime.
+     * @param array<string, string> $runtime_vars Runtime variables, which outrank every local.
+     * @param string                $locale       Plural locale.
+     * @return array<string, string> Frozen values, name => rendered text.
+     */
+    private function roll_definitions(
+        array $definitions,
+        RenderContext $context,
+        array $runtime_vars,
+        string $locale
+    ): array {
+        $vars = $context->get_merged_variables();
+        $outranked = array_change_key_case($runtime_vars, CASE_LOWER);
+        $aliases = array_diff_key($vars, array_diff_key($definitions, $outranked));
+        $resolved = array();
+
+        foreach ($this->parser->order_definitions($definitions, $aliases) as $name) {
+            if (array_key_exists($name, $outranked)) {
+                continue;
+            }
+
+            $visible = array_merge($vars, $resolved);
+            $value = $this->conditionals->apply($definitions[$name], $visible);
+            $value = $this->parser->expand_variables($value, $visible);
+            $value = $this->conditionals->apply($value, $visible);
+            $value = $this->plurals->apply($value, $locale, array('lenient' => true));
+            $value = $this->parser->resolve_enumerations($value);
+            $resolved[$name] = $this->parser->resolve_permutations($value);
+        }
+
+        return $resolved;
     }
 }

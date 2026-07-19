@@ -4,11 +4,12 @@
  *
  * The engine primitives (Parser, Conditionals, Plurals) are each individually pure, but the
  * SEMANTICS live in the order they run in. Conditionals run BOTH before and after variable
- * expansion; plurals run before enumerations (so `{plural %n%: …}` sees a literal count);
- * enumerations inside a `#set` value collapse ONCE at set-time, so `#set %n% = {1|4|9}` binds one
- * stable number rather than re-rolling per reference. Get that order wrong and plurals and
- * conditionals fail silently — which is exactly the bug this engine shipped once, and why the
- * order is a class here rather than a paragraph in a README each host re-implements.
+ * expansion; plurals run before enumerations (so `{plural %n%: …}` sees a literal count); and a
+ * `#def` value is rendered ONCE, after the context exists, so every reference to it sees the same
+ * text, while a `#set` value is substituted verbatim and re-rolls at each reference. Get that order
+ * wrong and plurals and conditionals fail silently — which is exactly the bug this engine shipped
+ * once, and why the order is a class here rather than a paragraph in a README each host
+ * re-implements.
  *
  * Two seams are left for the host, and only two:
  *
@@ -168,48 +169,38 @@ final class Pipeline {
 		// Stage 3: strip comments.
 		$text = $this->parser->strip_comments( $raw );
 
-		// Stage 4: extract #set directives and remove them from the body.
-		$extracted = $this->parser->extract_set_directives( $text );
+		// Stage 4: extract #set and #def directives and remove them from the body.
+		$extracted = $this->parser->extract_directives( $text );
 		$text      = $extracted['body'];
 
-		// Stage 4b: collapse enumerations inside #set values ONCE, so a local variable holds a
-		// single stable value (`#set %n% = {1|4|9}` becomes "4" and stays "4" at every reference).
-		// Critically, it also lets `{plural %n%: …}` see a number: the plural pass runs before
-		// enumeration resolution and would otherwise be handed an unresolved `{1|4|9}` and drop the
-		// block. Values carrying conditionals or plurals are left alone — they may reference
-		// variables defined on other lines and must stay deferred to stages 6a-6d.
-		foreach ( $extracted['variables'] as $set_name => $set_value ) {
-			if ( false === strpos( $set_value, '{' ) ) {
-				continue;
-			}
-			if ( false !== strpos( $set_value, '{?' ) || false !== strpos( $set_value, '{plural ' ) ) {
-				continue;
-			}
-			$extracted['variables'][ $set_name ] = $this->parser->resolve_enumerations( $set_value );
-		}
-
-		// Stage 5: build the variable context. Precedence: runtime > local (#set) > global.
-		$context = $context->with_local( $extracted['variables'] );
+		// Stage 5: build the variable context. Precedence: runtime > local > global — and
+		// `get_merged_variables()` enforces that by merge order, not by the order these calls
+		// are made in.
+		$context = $context->with_local( $extracted['set'] );
 		if ( ! empty( $runtime_vars ) ) {
 			$context = $context->with_runtime( $runtime_vars );
 		}
+
+		// Stage 5b: roll `#def` values ONCE, and only now — the full context has to exist first.
+		// A `#def` value is rendered as if it were a miniature body and the result is frozen for
+		// every reference, which is what `#set` deliberately does NOT do: a `#set` value is
+		// substituted verbatim and its brackets resolve independently at each reference.
+		//
+		// Doing this before stage 5 (where the old collapse-once pass sat) would hand the roll a
+		// context with no globals and no runtime variables, so `#def %x% = %product_name% {a|b}`
+		// would freeze the literal text `%product_name%`.
+		if ( ! empty( $extracted['def'] ) ) {
+			$context = $context->with_local(
+				$this->roll_definitions( $extracted['def'], $context, $runtime_vars, $locale )
+			);
+		}
+
 		$all_vars = $context->get_merged_variables();
 
 		// Shield host constructs so the enumeration/permutation resolvers never see their brackets.
 		$shielded = array();
 		$counter  = 0;
-		foreach ( $this->protect as $pattern ) {
-			$text = (string) preg_replace_callback(
-				$pattern,
-				static function ( array $m ) use ( &$shielded, &$counter ): string {
-					$key              = "\x00HOST_{$counter}\x00";
-					$shielded[ $key ] = $m[0];
-					++$counter;
-					return $key;
-				},
-				$text
-			);
-		}
+		$text     = $this->shield_host_constructs( $text, $shielded, $counter );
 
 		// Stage 6a: conditionals, before variable expansion — so only the surviving branch is fed
 		// into the expander.
@@ -217,6 +208,14 @@ final class Pipeline {
 
 		// Stage 6b: expand %variables%.
 		$text = $this->parser->expand_variables( $text, $all_vars );
+
+		// Shield again. The pass above is the only place a host construct can enter the document
+		// after the first shield — carried in by a `#set`, a global, a runtime variable or a frozen
+		// `#def`, none of whose values were part of the body when it ran. Without this, stage 8
+		// reads `[host id="1"]` as a single-element permutation and strips the brackets, so the
+		// construct reaches the stage 9 hook as inert text. That was true of `#set` and globals
+		// long before `#def` existed; the roll stage simply gave the hole a second entrance.
+		$text = $this->shield_host_constructs( $text, $shielded, $counter );
 
 		// Stage 6c: conditionals again, after expansion — a substituted value may itself carry one.
 		$text = $this->conditionals->apply( $text, $all_vars );
@@ -249,6 +248,131 @@ final class Pipeline {
 
 		if ( null !== $this->nested ) {
 			$text = (string) ( $this->nested )( $text, $child );
+		}
+
+		return $text;
+	}
+
+	/**
+	 * Render each `#def` value once and return the frozen results.
+	 *
+	 * Values are rendered in dependency order so a `#def` built out of another `#def` sees the
+	 * resolved text rather than the raw template. `Parser::order_definitions()` works that order
+	 * out, following `#set` aliases as well as direct references — the dependency in
+	 * `#def %b% = %s%` / `#set %s% = %a%` / `#def %a% = …` is real but invisible in `%b%`'s text.
+	 *
+	 * A name that a runtime variable also defines is skipped: runtime outranks locals, so rolling
+	 * it would be work whose result nothing can read.
+	 *
+	 * @param array<string, string> $definitions  Raw `#def` values, name => value.
+	 * @param RenderContext         $context      Context with globals, `#set` locals and runtime.
+	 * @param array<string, string> $runtime_vars Runtime variables, which outrank every local.
+	 * @param string                $locale       Plural locale.
+	 * @return array<string, string> Frozen values, name => rendered text.
+	 */
+	private function roll_definitions(
+		array $definitions,
+		RenderContext $context,
+		array $runtime_vars,
+		string $locale
+	): array {
+		$vars      = $context->get_merged_variables();
+		$outranked = array_change_key_case( $runtime_vars, CASE_LOWER );
+		$resolved  = array();
+
+		// The alias map is every macro value a definition can actually see — globals and runtime
+		// variables as well as local `#set`. Passing only the local map would miss a dependency
+		// routed through a global: `#def %b% = %s%` with a global `%s% = %a%` and a local
+		// `#def %a%`.
+		//
+		// Excluded from it are the definitions that will actually be rolled, because a `#def`
+		// shadows a global of the same name and hopping through the shadowed value would compute
+		// the wrong graph. A definition a runtime variable outranks is NOT excluded: it is never
+		// rolled, so the runtime value is the one that will really be substituted, and the graph
+		// has to follow it. Excluding those too made a dependency reached through such a name
+		// invisible, and declaration order leaked back into the result.
+		$aliases = array_diff_key( $vars, array_diff_key( $definitions, $outranked ) );
+
+		foreach ( $this->parser->order_definitions( $definitions, $aliases ) as $name ) {
+			if ( array_key_exists( $name, $outranked ) ) {
+				continue;
+			}
+
+			$resolved[ $name ] = $this->render_definition_value(
+				$definitions[ $name ],
+				array_merge( $vars, $resolved ),
+				$locale
+			);
+		}
+
+		return $resolved;
+	}
+
+	/**
+	 * Render one `#def` value through the same passes the body gets, in the same order.
+	 *
+	 * Stage 9 (`#include`) is deliberately absent: includes resolve after everything here and
+	 * cannot be frozen into a value.
+	 *
+	 * @param string                $value  Raw directive value.
+	 * @param array<string, string> $vars   Variables visible to this value.
+	 * @param string                $locale Plural locale.
+	 * @return string
+	 */
+	private function render_definition_value( string $value, array $vars, string $locale ): string {
+		// A host construct is opaque wherever it is written, including inside a definition. Shield
+		// it for the length of the roll and hand it back whole, so the frozen value carries the
+		// construct rather than the wreckage of one.
+		$shielded = array();
+		$counter  = 0;
+		$value    = $this->shield_host_constructs( $value, $shielded, $counter );
+
+		$value = $this->conditionals->apply( $value, $vars );
+		$value = $this->parser->expand_variables( $value, $vars );
+
+		// Shield again, for the same reason the body does: expansion is the one place a host
+		// construct can enter after the first pass. `#def %frag% = %s%` with
+		// `#set %s% = [host id="1"]` pulls it in here, and without this the permutation resolver
+		// below reads it as a single-element permutation and strips the brackets.
+		$value = $this->shield_host_constructs( $value, $shielded, $counter );
+
+		$value = $this->conditionals->apply( $value, $vars );
+		$value = $this->plurals->apply( $value, $locale, array( 'lenient' => true ) );
+		$value = $this->parser->resolve_enumerations( $value );
+		$value = $this->parser->resolve_permutations( $value );
+
+		if ( ! empty( $shielded ) ) {
+			$value = str_replace( array_keys( $shielded ), array_values( $shielded ), $value );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Replace host constructs with opaque placeholders.
+	 *
+	 * The placeholders are `\x00HOST_n\x00`, which no template syntax can produce and no resolver
+	 * reads. Callers share `$shielded` and `$counter` across successive calls, so one restore at
+	 * the end covers every pass.
+	 *
+	 * @param string                $text     Text to shield.
+	 * @param array<string, string> $shielded Placeholder => original, accumulated by reference.
+	 * @param int                   $counter  Placeholder counter, advanced by reference.
+	 * @return string
+	 */
+	private function shield_host_constructs( string $text, array &$shielded, int &$counter ): string {
+		foreach ( $this->protect as $pattern ) {
+			$text = (string) preg_replace_callback(
+				$pattern,
+				static function ( array $m ) use ( &$shielded, &$counter ): string {
+					$key              = "\x00HOST_{$counter}\x00";
+					$shielded[ $key ] = $m[0];
+					++$counter;
+
+					return $key;
+				},
+				$text
+			);
 		}
 
 		return $text;

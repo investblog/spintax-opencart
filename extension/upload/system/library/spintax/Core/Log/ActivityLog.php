@@ -14,9 +14,12 @@ namespace Spintax\Core\Log;
 
 use Spintax\Core\Binding\PlanCode;
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 
 final class ActivityLog
 {
+    use SqlIdentifiers;
+
     /** Rows retained after a prune. */
     public const KEEP = 500;
 
@@ -38,14 +41,22 @@ final class ActivityLog
         if (0 === $written && 0 === $skipped && 0 === $blocked && '' === $note) {
             return;
         }
-        $this->db->query(
-            "INSERT INTO `" . $this->prefix . "spintax_log` SET "
-            . "binding_id = '" . $this->db->escape($bindingId) . "', "
-            . "origin = '" . $this->db->escape($origin) . "', "
-            . "entity_id = " . (int) ($entityId ?? 0) . ", "
-            . "written = " . (int) $written . ", skipped = " . (int) $skipped . ", blocked = " . (int) $blocked . ", "
-            . "note = '" . $this->db->escape(mb_substr($note, 0, 255)) . "', date_added = NOW()"
+        $sql = sprintf(
+            "INSERT INTO %s SET "
+            . "binding_id = '%s', origin = '%s', entity_id = %d, "
+            . "written = %d, skipped = %d, blocked = %d, "
+            . "note = '%s', date_added = NOW()",
+            $this->table('spintax_log'),
+            $this->db->escape($bindingId),
+            $this->db->escape($origin),
+            $entityId ?? 0,
+            $written,
+            $skipped,
+            $blocked,
+            $this->db->escape(mb_substr($note, 0, 255))
         );
+
+        $this->db->query($sql);
         $id = (int) $this->db->query("SELECT LAST_INSERT_ID() AS id")->row['id'];
         if (0 === $id % 100) {
             $this->prune();
@@ -81,19 +92,33 @@ final class ActivityLog
      */
     public function recent(int $limit = 100): array
     {
-        return $this->db->query(
-            "SELECT * FROM `" . $this->prefix . "spintax_log` ORDER BY log_id DESC LIMIT " . max(1, (int) $limit)
-        )->rows;
+        $sql = sprintf(
+            'SELECT * FROM %s ORDER BY log_id DESC LIMIT %d',
+            $this->table('spintax_log'),
+            max(1, $limit)
+        );
+
+        return $this->db->query($sql)->rows;
     }
 
     /** Trim to the newest KEEP rows. */
     public function prune(int $keep = self::KEEP): void
     {
-        $row = $this->db->query(
-            "SELECT log_id FROM `" . $this->prefix . "spintax_log` ORDER BY log_id DESC LIMIT 1 OFFSET " . max(0, (int) $keep)
-        )->row;
+        $sql = sprintf(
+            'SELECT log_id FROM %s ORDER BY log_id DESC LIMIT 1 OFFSET %d',
+            $this->table('spintax_log'),
+            max(0, $keep)
+        );
+
+        $row = $this->db->query($sql)->row;
         if (!empty($row)) {
-            $this->db->query("DELETE FROM `" . $this->prefix . "spintax_log` WHERE log_id <= " . (int) $row['log_id']);
+            $sql = sprintf(
+                'DELETE FROM %s WHERE log_id <= %d',
+                $this->table('spintax_log'),
+                $row['log_id']
+            );
+
+            $this->db->query($sql);
         }
     }
 }

@@ -8,6 +8,13 @@ for products, categories, information pages and manufacturers, across every lang
 - Source & issues: <https://github.com/investblog/spintax-opencart>
 - Spintax syntax reference: <https://spintax.net/docs/syntax>
 
+> **One thing the syntax site does not cover yet: `#def`.** `#set %x% = {a|b}` is a *macro* — it is
+> re-picked at every use, so the same variable can read differently twice on one page. `#def %x% =
+> {a|b}` is picked **once per render** and held. Reach for `#def` whenever two mentions disagreeing
+> would look like a mistake — a product name, a tone, and above all a number you both print and
+> agree grammatically (`#def %n% = {1|4}` then `{plural %n%: item|items}`). Under `#set` that plural
+> block renders empty, because the count is still spintax when the plural is decided.
+
 ---
 
 ## 1. Requirements

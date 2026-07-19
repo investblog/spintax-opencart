@@ -22,9 +22,12 @@ namespace Spintax\Core\Binding;
 
 use Spintax\Catalog\LanguageResolver;
 use Spintax\Db\DbInterface;
+use Spintax\Db\SqlIdentifiers;
 
 final class Walk
 {
+    use SqlIdentifiers;
+
     private const STALE_LOCK_SECONDS = 3600;
 
     private DbInterface $db;
@@ -49,9 +52,13 @@ final class Walk
     {
         $templateModified = '';
         if ('template' === ($bindingRow['source_mode'] ?? '') && (int) ($bindingRow['template_id'] ?? 0) > 0) {
-            $t = $this->db->query(
-                "SELECT date_modified FROM `" . $this->prefix . "spintax_template` WHERE template_id = " . (int) $bindingRow['template_id']
+            $sql = sprintf(
+                "SELECT date_modified FROM %s WHERE template_id = %d",
+                $this->table('spintax_template'),
+                $bindingRow['template_id']
             );
+
+            $t = $this->db->query($sql);
             $templateModified = (string) ($t->row['date_modified'] ?? '');
         }
 
@@ -225,11 +232,16 @@ final class Walk
     public function releaseLock(string $bindingId): array
     {
         $now = time();
-        $this->db->query(
-            "UPDATE `" . $this->prefix . "spintax_walk` SET lock_ts = 0, date_modified = NOW() "
-            . "WHERE binding_id = '" . $this->db->escape($bindingId) . "' "
-            . "AND (lock_ts = 0 OR lock_ts < " . ($now - self::STALE_LOCK_SECONDS) . ")"
+        $sql = sprintf(
+            "UPDATE %s SET lock_ts = 0, date_modified = NOW() "
+            . "WHERE binding_id = '%s' "
+            . "AND (lock_ts = 0 OR lock_ts < %d)",
+            $this->table('spintax_walk'),
+            $this->db->escape($bindingId),
+            $now - self::STALE_LOCK_SECONDS
         );
+
+        $this->db->query($sql);
         if ($this->db->affectedRows() < 1) {
             // Either no such row, or the lock is live → refuse.
             $walk = $this->loadWalk($bindingId);
@@ -247,18 +259,27 @@ final class Walk
      */
     public function pauseLock(string $bindingId, int $lockTs): void
     {
-        $this->db->query(
-            "UPDATE `" . $this->prefix . "spintax_walk` SET lock_ts = 0, date_modified = NOW() "
-            . "WHERE binding_id = '" . $this->db->escape($bindingId) . "' AND lock_ts = " . (int) $lockTs
+        $sql = sprintf(
+            "UPDATE %s SET lock_ts = 0, date_modified = NOW() "
+            . "WHERE binding_id = '%s' AND lock_ts = %d",
+            $this->table('spintax_walk'),
+            $this->db->escape($bindingId),
+            $lockTs
         );
+
+        $this->db->query($sql);
     }
 
     /** @return array<string, mixed>|null */
     public function loadWalk(string $bindingId): ?array
     {
-        $q = $this->db->query(
-            "SELECT * FROM `" . $this->prefix . "spintax_walk` WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+        $sql = sprintf(
+            "SELECT * FROM %s WHERE binding_id = '%s'",
+            $this->table('spintax_walk'),
+            $this->db->escape($bindingId)
         );
+
+        $q = $this->db->query($sql);
         return $q->num_rows > 0 ? $q->row : null;
     }
 
@@ -267,29 +288,48 @@ final class Walk
     /** @return int[] */
     private function entityIds(EntityType $entity, int $offset, int $limit): array
     {
-        $q = $this->db->query(
-            "SELECT `" . $entity->idColumn . "` AS id FROM `" . $this->prefix . $entity->baseTable . "` "
-            . "ORDER BY `" . $entity->idColumn . "` LIMIT " . (int) $limit . " OFFSET " . (int) $offset
+        $sql = sprintf(
+            "SELECT `%s` AS id FROM %s "
+            . "ORDER BY `%s` LIMIT %d OFFSET %d",
+            $this->column($entity->idColumn),
+            $this->table($entity->baseTable),
+            $this->column($entity->idColumn),
+            $limit,
+            $offset
         );
+
+        $q = $this->db->query($sql);
         return array_map(static fn($r): int => (int) $r['id'], $q->rows);
     }
 
     private function totalEntities(EntityType $entity): int
     {
-        return (int) $this->db->query("SELECT COUNT(*) AS c FROM `" . $this->prefix . $entity->baseTable . "`")->row['c'];
+        $sql = sprintf(
+            "SELECT COUNT(*) AS c FROM %s",
+            $this->table($entity->baseTable)
+        );
+
+        return (int) $this->db->query($sql)->row['c'];
     }
 
     private function resetWalk(string $bindingId, int $total, int $cacheVersion, string $token): void
     {
         // INSERT ... ON DUPLICATE KEY UPDATE preserves last_applied_version and
         // last_run (Stale-badge + cadence state) while resetting cursor/counts.
-        $this->db->query(
-            "INSERT INTO `" . $this->prefix . "spintax_walk` "
+        $sql = sprintf(
+            "INSERT INTO %s "
             . "(binding_id, cursor_offset, total, processed, lock_ts, walk_failed, cache_version, last_applied_version, last_run, snapshot_token, date_modified) "
-            . "VALUES ('" . $this->db->escape($bindingId) . "', 0, " . (int) $total . ", 0, 0, 0, " . (int) $cacheVersion . ", 0, 0, '" . $this->db->escape($token) . "', NOW()) "
+            . "VALUES ('%s', 0, %d, 0, 0, 0, %d, 0, 0, '%s', NOW()) "
             . "ON DUPLICATE KEY UPDATE cursor_offset = 0, total = VALUES(total), processed = 0, lock_ts = 0, "
-            . "walk_failed = 0, cache_version = VALUES(cache_version), snapshot_token = VALUES(snapshot_token), date_modified = NOW()"
+            . "walk_failed = 0, cache_version = VALUES(cache_version), snapshot_token = VALUES(snapshot_token), date_modified = NOW()",
+            $this->table('spintax_walk'),
+            $this->db->escape($bindingId),
+            $total,
+            $cacheVersion,
+            $this->db->escape($token)
         );
+
+        $this->db->query($sql);
     }
 
     /**
@@ -312,9 +352,14 @@ final class Walk
             // from affected_rows — a same-second refresh writes an identical value,
             // which MySQL reports as 0 affected rows.
             if (null !== $lockTs && (int) $lockTs === $currentLock) {
-                $this->db->query(
-                    "UPDATE `" . $this->prefix . "spintax_walk` SET lock_ts = " . (int) $now . ", date_modified = NOW() WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+                $sql = sprintf(
+                    "UPDATE %s SET lock_ts = %d, date_modified = NOW() WHERE binding_id = '%s'",
+                    $this->table('spintax_walk'),
+                    $now,
+                    $this->db->escape($bindingId)
                 );
+
+                $this->db->query($sql);
                 return $now;
             }
             return null; // held by another live walk
@@ -322,28 +367,47 @@ final class Walk
 
         // Free or stale → CAS acquire (0/stale → now is a real value change, so
         // affected_rows is reliable; two racing acquires: only one matches).
-        $this->db->query(
-            "UPDATE `" . $this->prefix . "spintax_walk` SET lock_ts = " . (int) $now . ", date_modified = NOW() "
-            . "WHERE binding_id = '" . $this->db->escape($bindingId) . "' AND (lock_ts = 0 OR lock_ts < " . (int) $stale . ")"
+        $sql = sprintf(
+            "UPDATE %s SET lock_ts = %d, date_modified = NOW() "
+            . "WHERE binding_id = '%s' AND (lock_ts = 0 OR lock_ts < %d)",
+            $this->table('spintax_walk'),
+            $now,
+            $this->db->escape($bindingId),
+            $stale
         );
+
+        $this->db->query($sql);
         return $this->db->affectedRows() >= 1 ? $now : null;
     }
 
     private function markFailed(string $bindingId): void
     {
-        $this->db->query(
-            "UPDATE `" . $this->prefix . "spintax_walk` SET walk_failed = 1, lock_ts = 0, date_modified = NOW() WHERE binding_id = '" . $this->db->escape($bindingId) . "'"
+        $sql = sprintf(
+            "UPDATE %s SET walk_failed = 1, lock_ts = 0, date_modified = NOW() WHERE binding_id = '%s'",
+            $this->table('spintax_walk'),
+            $this->db->escape($bindingId)
         );
+
+        $this->db->query($sql);
     }
 
     private function advance(string $bindingId, int $cursor, int $processed, bool $done, int $cacheVersion): void
     {
-        $sql = "UPDATE `" . $this->prefix . "spintax_walk` SET cursor_offset = " . (int) $cursor . ", processed = " . (int) $processed . ", ";
-        if ($done) {
-            // Zero-failure completion stamps the applied version + releases the lock (§7.4).
-            $sql .= "last_applied_version = IF(walk_failed = 0, " . (int) $cacheVersion . ", last_applied_version), lock_ts = 0, ";
-        }
-        $sql .= "date_modified = NOW() WHERE binding_id = '" . $this->db->escape($bindingId) . "'";
+        // Zero-failure completion stamps the applied version + releases the lock (§7.4).
+        $stamp = $done
+            ? sprintf('last_applied_version = IF(walk_failed = 0, %d, last_applied_version), lock_ts = 0, ', $cacheVersion)
+            : '';
+
+        $sql = sprintf(
+            "UPDATE %s SET cursor_offset = %d, processed = %d, %s"
+            . "date_modified = NOW() WHERE binding_id = '%s'",
+            $this->table('spintax_walk'),
+            $cursor,
+            $processed,
+            $stamp,
+            $this->db->escape($bindingId)
+        );
+
         $this->db->query($sql);
     }
 }

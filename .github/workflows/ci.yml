@@ -48,3 +48,26 @@ jobs:
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit -c phpunit.xml.dist
+
+      # KernelLoadsTest proves the shipped tree matches the PIN. Nothing proved the pin matches the
+      # latest release — and a pre-1.0 caret cannot cross a minor, so `^0.1` silently held this port
+      # a whole version behind and it missed the BCS plural release entirely. That shipped: sr/hr/bs
+      # rendered fullwidth-braced wreckage in v0.2.6 with every test green.
+      #
+      # Advisory on purpose. A hard failure would turn every upstream release into a red build here
+      # before anyone has decided to take it, which trains people to ignore the signal. This makes
+      # the gap visible in the job summary instead.
+      - name: Is the engine pin behind its latest release?
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          pinned=$(composer show spintax/core --format=json | php -r 'echo json_decode(stream_get_contents(STDIN), true)["versions"][0];')
+          latest=$(composer show spintax/core --available --format=json | php -r '$d=json_decode(stream_get_contents(STDIN),true); echo $d["latest"] ?? $d["versions"][0];')
+          echo "pinned: $pinned   latest: $latest"
+          if [ "$pinned" != "$latest" ]; then
+            echo "::warning title=Engine pin is behind::spintax/core is pinned at $pinned but $latest is released. Bump the constraint in extension/composer.json, run 'composer run sync-kernel', and read that release's changelog before shipping."
+            echo "### ⚠️ Engine pin is behind" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`spintax/core\` pinned **$pinned**, latest **$latest**." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ✅ Engine pin is current ($pinned)" >> "$GITHUB_STEP_SUMMARY"
+          fi

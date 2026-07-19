@@ -10,10 +10,57 @@
 
 class ControllerExtensionModuleSpintaxSeo extends Controller
 {
+    /**
+     * The table prefix, mirroring the library classes.
+     *
+     * The controller issues a handful of queries of its own, and they compose exactly like the
+     * library's: through `SqlIdentifiers`, into a `$sql` variable, never concatenated inside the
+     * `query()` call. `DB_PREFIX` is captured here rather than referenced inside each statement so
+     * there is one place it enters SQL, the same as everywhere else.
+     */
+    private string $prefix = '';
+
+    public function __construct($registry)
+    {
+        parent::__construct($registry);
+        $this->bootstrap();
+        $this->prefix = DB_PREFIX;
+    }
+
     /** Load the engine library's SPL autoloader (not PSR-4 under OpenCart). */
     private function bootstrap(): void
     {
         require_once DIR_SYSTEM . 'library/spintax/autoload.php';
+    }
+
+    /**
+     * Backtick-quote a prefixed table name. Deliberately a copy, not the `SqlIdentifiers` trait.
+     *
+     * A `use SomeTrait;` is resolved when PHP **links the class**, which happens the moment
+     * OpenCart loads this file — before any method of it runs, and therefore before `bootstrap()`
+     * has registered the engine's SPL autoloader. Pulling the trait in here would fatal the whole
+     * admin module on load. Fifteen duplicated lines are the cheaper mistake.
+     *
+     * The guard is identical to the library's on purpose: a table name is an identifier, so
+     * `escape()` cannot protect it, and only `^[a-z_]+$` gets through.
+     */
+    private function table(string $name): string
+    {
+        if (1 !== preg_match('/^[a-z_]+$/', $name)) {
+            throw new \InvalidArgumentException('Table name must be a bare literal, got: ' . $name);
+        }
+
+        return '`' . $this->prefix . $name . '`';
+    }
+
+    /** Validate a column name and return it unchanged — it already sits in a backticked slot. */
+    private function column(string $name): string
+    {
+        if (1 !== preg_match('/^[a-z_]+$/', $name)) {
+            throw new \InvalidArgumentException('Column name must be a bare identifier, got: ' . $name);
+        }
+
+        return $name;
     }
 
     private function db(): \Spintax\Db\OcDb
@@ -253,11 +300,17 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         // Signature has no entity_type column; scope the purge by joining the
         // binding (binding_id encodes the entity) so a category id can't purge a
         // product's signatures, and vice-versa.
-        $this->db->query(
-            "DELETE sig FROM `" . DB_PREFIX . "spintax_signature` sig "
-            . "JOIN `" . DB_PREFIX . "spintax_binding` b ON sig.binding_id = b.binding_id "
-            . "WHERE b.entity_type = '" . $this->db->escape($entity->type) . "' AND sig.entity_id = " . (int) $entityId
+        $sql = sprintf(
+            "DELETE sig FROM %s sig "
+            . "JOIN %s b ON sig.binding_id = b.binding_id "
+            . "WHERE b.entity_type = '%s' AND sig.entity_id = %d",
+            $this->table('spintax_signature'),
+            $this->table('spintax_binding'),
+            $this->db->escape($entity->type),
+            $entityId
         );
+
+        $this->db->query($sql);
         // Purge the entity's per-entity sources + bump per_entity bindings so any
         // pending dry-run snapshot is invalidated (§7.1).
         (new \Spintax\Core\Binding\PerEntitySource($this->db(), DB_PREFIX))->purge($entity->type, $entityId);
@@ -327,7 +380,13 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
     private function sourceFor(array $bindingRow): ?string
     {
         if ((int) ($bindingRow['template_id'] ?? 0) > 0) {
-            $q = $this->db->query("SELECT source FROM `" . DB_PREFIX . "spintax_template` WHERE template_id = " . (int) $bindingRow['template_id']);
+            $sql = sprintf(
+                'SELECT source FROM %s WHERE template_id = %d',
+                $this->table('spintax_template'),
+                $bindingRow['template_id']
+            );
+
+            $q = $this->db->query($sql);
             return $q->num_rows > 0 ? (string) $q->row['source'] : null;
         }
         return null;
@@ -559,10 +618,17 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         $languageId = (int) ($this->request->post['language_id'] ?? 0);
         $entity = \Spintax\Core\Binding\EntityRegistry::get((string) ($this->request->post['entity_type'] ?? 'product'));
         if (null !== $entity && $entity->hasDescriptionTable() && $entityId > 0 && $languageId > 0) {
-            $q = $this->db->query(
-                "SELECT `" . $entity->nameColumn . "` AS n FROM `" . DB_PREFIX . $entity->descriptionTable . "` "
-                . "WHERE `" . $entity->idColumn . "` = " . (int) $entityId . " AND language_id = " . (int) $languageId
+            $sql = sprintf(
+                "SELECT `%s` AS n FROM %s "
+                . "WHERE `%s` = %d AND language_id = %d",
+                $this->column($entity->nameColumn),
+                $this->table((string) $entity->descriptionTable),
+                $this->column($entity->idColumn),
+                $entityId,
+                $languageId
             );
+
+            $q = $this->db->query($sql);
             if ($q->num_rows) {
                 $vars['name'] = (string) $q->row['n'];
             }
@@ -572,7 +638,13 @@ class ControllerExtensionModuleSpintaxSeo extends Controller
         // Resolve #include in the preview too (same output as Test/Apply).
         $resolver = (false !== strpos($source, '#include'))
             ? \Spintax\Core\Template\IncludeResolver::build($engine, function (string $name): ?string {
-                $q = $this->db->query("SELECT source FROM `" . DB_PREFIX . "spintax_template` WHERE name = '" . $this->db->escape($name) . "' ORDER BY template_id LIMIT 1");
+                $sql = sprintf(
+                    "SELECT source FROM %s WHERE name = '%s' ORDER BY template_id LIMIT 1",
+                    $this->table('spintax_template'),
+                    $this->db->escape($name)
+                );
+
+                $q = $this->db->query($sql);
                 return isset($q->row['source']) ? (string) $q->row['source'] : null;
             }, $vars, $code)
             : null;
