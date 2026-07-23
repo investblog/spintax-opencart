@@ -452,6 +452,9 @@ class Parser {
 	 * @return string Cleaned-up text.
 	 */
 	public function post_process( string $text ): string {
+		// Whether the CALLER's own text carries a NUL decides how step 12 restores. Read it here,
+		// before the shield mints any of its own — afterwards the two are indistinguishable.
+		$input_has_nul                   = str_contains( $text, "\x00" );
 		$placeholders                    = array();
 		$counter                         = 0;
 		$domain_part                     = '(?:(?:(?:xn--)?[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)\.)+(?:xn--[a-z0-9\-]{2,59}|[\p{L}][\p{L}\p{N}-]{1,62})';
@@ -476,23 +479,38 @@ class Parser {
 			return $store_placeholder( $value, $prefix );
 		};
 
-		// 1. Shield: full URLs (with protocol).
+		// 1. Shield URIs — `https?`/`ftp` (with a `//` authority) and `mailto:`/`tel:` (without
+		// one) — in ONE pass, deliberately, and before the email/domain passes so the whole
+		// `mailto:` survives instead of the address being carved out from under its prefix,
+		// leaving a bare 'mailto:' whose colon then gets a space injected (spintax-js#41).
+		//
+		// They used to be two passes, URLs then `mailto:`/`tel:`. A URI body runs to the first
+		// delimiter, so the two match sets overlap whenever one URI carries the other's scheme,
+		// and with two passes the second one runs into a placeholder the first already minted:
+		// `mailto:sales@x.com?body=see%20https://shop.x.com/cart` shielded the URL first, then
+		// stored a `mailto:` value with URL_0's key inside it. The restore is past that key by
+		// the time the value lands, so the engine emitted a raw U+0000 — illegal in XML, U+FFFD
+		// to an HTML parser, rejected by Postgres `text`, and a live key again as soon as an edit
+		// detaches it from the prefix that was shielding it (spintax-js#53).
+		//
+		// Neither pass order fixes it, because whichever runs second is the one that gets split:
+		// shielding `mailto:` first only moves the damage onto a URL whose path carries a
+		// `mailto:`, where the leading half then loses its trailing dot to the punctuation pass
+		// (`https://x.io/a.mailto:…` becomes `https://x.io/a. mailto:…`). One alternation has no
+		// second pass to damage: the leftmost match wins and takes the whole token.
+		//
+		// NUL stays out of the body class regardless. Nothing is shielded yet when this pass
+		// runs, so on ordinary input it never bites; it is there for a caller-supplied NUL, which
+		// would otherwise let a URI match run through the delimiters of a placeholder minted
+		// after it.
 		$text = preg_replace_callback(
-			'~(?:https?|ftp)://[^\s<>"\')\]]+~iu',
+			'~(?:(?:https?|ftp)://|(?:mailto|tel):)[^\x00\s<>"\')\]]+~iu',
 			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
-				return $store_with_trailing_punctuation( $m[0], 'URL' );
-			},
-			$text
-		);
+				// URL and URI stay distinct prefixes even though one pass mints both — they are
+				// what the other engines' fixtures and the restore's token shape speak.
+				$prefix = preg_match( '~^(?:mailto|tel):~iu', $m[0] ) ? 'URI' : 'URL';
 
-		// 1b. Shield: mailto:/tel: URIs (no // authority, so step 1 misses them).
-		// Must run before the email/domain passes — otherwise the address is
-		// carved out from under the prefix, leaving a bare 'mailto:'/'tel:' whose
-		// colon then gets a space injected, producing a malformed link.
-		$text = preg_replace_callback(
-			'~(?:mailto|tel):[^\s<>"\')\]]+~iu',
-			static function ( array $m ) use ( $store_with_trailing_punctuation ): string {
-				return $store_with_trailing_punctuation( $m[0], 'URI' );
+				return $store_with_trailing_punctuation( $m[0], $prefix );
 			},
 			$text
 		);
@@ -672,15 +690,45 @@ class Parser {
 			$text
 		);
 
-		// 12. Restore placeholders (reverse order for safety).
+		// 12. Restore placeholders, in insertion order.
+		//
+		// Two restores, and which one runs is a contract question rather than a tuning detail.
+		// `str_replace()` over arrays is SEQUENTIAL: it replaces every occurrence of the first key
+		// throughout the text, then the second, and so on. That is O(text x keys) — the reason this
+		// stage was quadratic — but it is also observable. A replacement can rewrite text an earlier
+		// replacement produced, and an unpaired NUL the CALLER supplied can pair with the opening
+		// NUL of a real placeholder to form a key that was never minted here. One left-to-right pass
+		// reproduces neither effect, so it is NOT a drop-in for the general case.
+		//
+		// When the input carries no NUL of its own, both of those effects are gone: every NUL in the
+		// working text is then one the shield placed, so the tokens are well formed and no shielded
+		// value can hold a NUL to forge another. `strtr()` with a map is the single pass — it takes
+		// the longest key matching at each position and never rescans what it wrote, and here only
+		// one key can ever match, since every key is NUL-delimited with no NUL inside.
+		//
+		// The guard is NOT a proof that the two restores agree, and the comments in the sibling
+		// engines that say so are wrong. One divergence survives it, because placeholder delimiters
+		// are not owned by the token that placed them: between two adjacent shielded constructs,
+		// ordinary caller text can spell a key the shield really minted, and the sequential restore
+		// substitutes it, destroying both real tokens. `https://a.io e.g. URL_0mailto:x@y.io` is
+		// such an input and holds no NUL at all. There is no guard to hide behind there — this
+		// returns what `@spintax/core` returns, which is the single pass. See
+		// `tests/RestoreParityTest.php`, which pins the choice in both directions.
 		if ( ! empty( $placeholders ) ) {
-			$text = str_replace(
-				array_keys( $placeholders ),
-				array_values( $placeholders ),
-				$text
-			);
+			$text = $input_has_nul
+				? str_replace( array_keys( $placeholders ), array_values( $placeholders ), $text )
+				: strtr( $text, $placeholders );
 		}
 
+		// Final trim. This is a DELIBERATE, documented divergence from the sibling engines, not an
+		// oversight — see spintax-php#2. PHP's default charlist is `" \t\n\r\0\x0B"`: it strips NUL
+		// and does not strip form feed. `@spintax/core` uses `String.prototype.trim` and the Python
+		// port reproduces that same ECMAScript whitespace set on purpose, so both strip form feed
+		// and NBSP and keep a NUL. The three therefore disagree at the very edge, on input carrying
+		// a leading/trailing NUL, form feed or NBSP — none of which real rendered content has. The
+		// call is left as native `trim()`: the decision was to record the divergence rather than
+		// change output, since nothing pins it in the golden corpus and matching the reference would
+		// mean a `preg_replace` over the ECMAScript set here. Revisit if #2 lands a corpus fixture.
 		return trim( $text );
 	}
 

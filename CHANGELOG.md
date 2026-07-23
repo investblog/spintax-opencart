@@ -4,6 +4,26 @@ All notable changes to **Spintax SEO** are documented here. The format is based 
 [Keep a Changelog](https://keepachangelog.com/); the project ships date-based
 pre-releases while it stabilises toward a 1.0.
 
+## [0.4.1] — 2026-07-23
+
+Engine refresh: the rendered text can no longer carry a stray control character, and very large
+renders are much faster. No template or setting changes are needed.
+
+### Fixed
+
+- **Rendered output can no longer contain a stray null character.** In rare templates that place a
+  link, a `mailto:`/`tel:` address, an email or a nested construct directly next to one another, the
+  engine could emit an invalid U+0000 (NUL) byte — which MySQL rejects and browsers show as a
+  replacement character. The engine's internal placeholder handling was reworked so this can no
+  longer happen.
+
+### Changed
+
+- **Faster rendering of large pages.** Restoring the engine's internal placeholders is now linear
+  instead of quadratic, so a very large render that previously took tens of seconds now finishes in
+  a fraction of one. Pinned engine `spintax/core` 0.3.0 → 0.3.1; parity with the WordPress plugin
+  (3.0.1) and `@spintax/core`, locked by the shared cross-engine corpus.
+
 ## [0.4.0] — 2026-07-19
 
 `#set` goes back to being a macro, a new `#def` holds a value for the whole render, and every SQL

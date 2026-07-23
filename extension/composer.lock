@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "spintax/core",
-            "version": "v0.3.0",
+            "version": "v0.3.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/investblog/spintax-php.git",
-                "reference": "df021ca60a763691637884e888889caf557bb303"
+                "reference": "f5fe8baa89a6b6d246a466569390f6eb543dcc32"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/investblog/spintax-php/zipball/df021ca60a763691637884e888889caf557bb303",
-                "reference": "df021ca60a763691637884e888889caf557bb303",
+                "url": "https://api.github.com/repos/investblog/spintax-php/zipball/f5fe8baa89a6b6d246a466569390f6eb543dcc32",
+                "reference": "f5fe8baa89a6b6d246a466569390f6eb543dcc32",
                 "shasum": ""
             },
             "require": {
@@ -57,7 +57,7 @@
                 "issues": "https://github.com/investblog/spintax-php/issues",
                 "source": "https://github.com/investblog/spintax-php"
             },
-            "time": "2026-07-19T08:43:28+00:00"
+            "time": "2026-07-22T23:15:17+00:00"
         }
     ],
     "packages-dev": [
